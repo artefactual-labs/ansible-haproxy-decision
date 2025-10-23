@@ -105,6 +105,12 @@ Refer to `defaults/main.yml` for the full catalogue of variables.
           - "bind *:80"
           - "mode http"
           - "default_backend app_servers"
+        templates:
+          - src: snippets/frontend-path-acl.cfg.j2
+            vars:
+              acl_name: is_api
+              path_prefix: /api
+              backend: varnish_backend
     haproxy_decision_backends:
       - name: app_servers
         lines:
@@ -114,6 +120,11 @@ Refer to `defaults/main.yml` for the full catalogue of variables.
   roles:
     - ansible-haproxy-decision
 ```
+
+Each `listener`, `frontend`, and `backend` entry can optionally supply a single
+`template` (with `template_vars`) or a `templates` list. These snippets are
+rendered with Ansible’s template lookup and appended after the static `lines`,
+which lets you reuse complex fragments while keeping simple cases inline.
 
 ## SPOA customisation
 

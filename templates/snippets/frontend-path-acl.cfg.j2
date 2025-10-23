@@ -1,0 +1,2 @@
+acl {{ acl_name }} path_beg {{ path_prefix }}
+use_backend {{ backend }} if {{ acl_name }}
