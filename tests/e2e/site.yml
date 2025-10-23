@@ -32,25 +32,51 @@
         lines:
           - "bind *:80"
           - "mode http"
-          - "acl is_nginx path_beg /backend"
-          - "use_backend nginx_backend if is_nginx"
           - "default_backend varnish_backend"
+        templates:
+          - src: snippets/frontend-path-acl.cfg.j2
+            vars:
+              acl_name: path_backend
+              path_prefix: /backend
+              backend: nginx_backend
       - name: prom
         lines:
           - "bind 127.0.0.1:8404"
           - "mode http"
           - "http-request use-service prometheus-exporter if { path /metrics }"
+        templates:
+          - src: snippets/frontend-path-acl.cfg.j2
+            vars:
+              acl_name: metrics_root
+              path_prefix: /
+              backend: varnish_backend
     haproxy_decision_backends:
       - name: varnish_backend
         lines:
           - "mode http"
           - "balance roundrobin"
-          - "server varnish 127.0.0.1:6081 check"
+        templates:
+          - src: snippets/backend-server.cfg.j2
+            vars:
+              server_name: varnish
+              server_address: 127.0.0.1
+              server_port: 6081
+              server_options: "check"
+          - src: snippets/backend-add-header.cfg.j2
+            vars:
+              header_name: "X-Served-By"
+              header_value: "varnish"
       - name: nginx_backend
         lines:
           - "mode http"
           - "http-request set-path %[path,regsub(^/backend,/,)]"
-          - "server nginx 127.0.0.1:9080 check"
+        templates:
+          - src: snippets/backend-server.cfg.j2
+            vars:
+              server_name: nginx
+              server_address: 127.0.0.1
+              server_port: 9080
+              server_options: "check"
     haproxy_decision_spoas:
       decision:
         enabled: true
