@@ -2,24 +2,24 @@
 
 {% macro render_section_templates(section) -%}
   {%- set entries = [] -%}
-  {%- if section.template is defined and section.template -%}
-    {%- set _ = entries.append({'src': section.template, 'vars': section.template_vars | default({})}) -%}
-  {%- endif -%}
-  {%- if section.templates is defined -%}
-    {%- for tpl in section.templates -%}
+  {%- if section is mapping -%}
+    {%- if section.get('template') -%}
+      {%- set entries = entries + [{'src': section.get('template'), 'vars': section.get('template_vars', {})}] -%}
+    {%- endif -%}
+    {%- for tpl in section.get('templates', []) -%}
       {%- if tpl is string -%}
-        {%- set _ = entries.append({'src': tpl, 'vars': {}}) -%}
+        {%- set entries = entries + [{'src': tpl, 'vars': {}}] -%}
       {%- elif tpl is mapping -%}
-        {%- set tpl_src = tpl.src | default(tpl.template | default('')) -%}
+        {%- set tpl_src = tpl.get('src', tpl.get('template', '')) -%}
         {%- if tpl_src -%}
-          {%- set _ = entries.append({'src': tpl_src, 'vars': tpl.vars | default({})}) -%}
+          {%- set entries = entries + [{'src': tpl_src, 'vars': tpl.get('vars', tpl.get('variables', {}))}] -%}
         {%- endif -%}
       {%- endif -%}
     {%- endfor -%}
   {%- endif -%}
   {%- for entry in entries -%}
     {%- if entry.src -%}
-      {%- set rendered = lookup('template', entry.src, convert_data=False, vars=entry.vars) | string -%}
+      {%- set rendered = lookup('template', entry.src, convert_data=False, vars=entry.vars | default({})) | string -%}
       {%- if rendered.strip() -%}
 {{ rendered.rstrip() | indent(2, true) }}
       {%- endif -%}
