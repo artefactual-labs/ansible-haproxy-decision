@@ -14,70 +14,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare host dependencies
+      - name: Install virtualization tooling
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            qemu-kvm \
+            qemu-utils \
+            cloud-image-utils \
+            sshpass \
+            netcat-openbsd \
             python3 \
             python3-venv \
+            python3-pip \
             curl \
             git \
             tar \
             gzip
-          sudo systemctl start docker || true
 
-      - name: Launch Rocky Linux 9 container with systemd
+      - name: Enable KVM device access
         run: |
-          sudo docker pull rockylinux:9
-          sudo docker run --name rocky9-e2e \
-            --privileged \
-            --cgroupns=host \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            -d rockylinux:9 /sbin/init
-          sudo docker exec rocky9-e2e bash -lc 'for i in {1..30}; do status=$(systemctl is-system-running --wait 2>/dev/null || true); case "$status" in running|degraded) exit 0 ;; esac; sleep 2; done; systemctl is-system-running || true'
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 666 /dev/kvm || true
 
-      - name: Install dependencies inside container
+      - name: Set up Python and Ansible
         run: |
-          sudo docker exec rocky9-e2e dnf -y install epel-release
-          sudo docker exec rocky9-e2e dnf -y install \
-            python3 \
-            python3-pip \
-            python3-virtualenv \
-            git \
-            tar \
-            gzip \
-            which \
-            policycoreutils-python-utils \
-            nmap-ncat \
-            curl
-          sudo docker exec rocky9-e2e dnf -y install https://dl.k6.io/rpm/repo.rpm
-          sudo docker exec rocky9-e2e dnf -y install k6
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install ansible-core==2.15.9 ansible==8.7.0
 
-      - name: Set up Python and Ansible inside container
-        run: |
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && python3 -m venv .venv"
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && source .venv/bin/activate && pip install --upgrade pip && pip install ansible-core==2.15.9 ansible==8.7.0"
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && source .venv/bin/activate && ANSIBLE_ROLES_PATH=\$(dirname /workspace):/root/.ansible/roles ansible-galaxy role install -r tests/e2e/requirements.yml"
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && source .venv/bin/activate && ANSIBLE_ROLES_PATH=\$(dirname /workspace):/root/.ansible/roles ansible-galaxy collection install -r tests/e2e/requirements.yml"
-
-      - name: Apply playbook inside Rocky 9 container
+      - name: Run end-to-end tests on Rocky 9 VM
         env:
           ANSIBLE_STDOUT_CALLBACK: debug
         run: |
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && source .venv/bin/activate && ANSIBLE_ROLES_PATH=\$(dirname /workspace):/root/.ansible/roles ansible-playbook -i tests/e2e/inventory-localhost.ini tests/e2e/site.yml"
+          source .venv/bin/activate
+          export ANSIBLE_ROLES_PATH="$(dirname "${GITHUB_WORKSPACE}"):${HOME}/.ansible/roles"
+          tests/e2e/run_e2e.sh
 
-      - name: Run smoke test and collect metrics
-        run: |
-          sudo docker exec rocky9-e2e bash -lc "cd /workspace && BASE_URL=http://127.0.0.1 k6 run tests/e2e/k6/smoke.js"
-          mkdir -p tests/e2e/artifacts
-          sudo docker exec rocky9-e2e bash -lc "curl -fs http://127.0.0.1:8404/metrics" > tests/e2e/artifacts/haproxy_metrics.prom
-
-      - name: Stop Rocky 9 container
+      - name: Ensure VM shutdown
         if: always()
         run: |
-          sudo docker logs rocky9-e2e > tests/e2e/artifacts/container.log || true
-          sudo docker rm -f rocky9-e2e || true
+          tests/e2e/stop_vm.sh || true
 
       - name: Upload artifacts
         if: failure()
