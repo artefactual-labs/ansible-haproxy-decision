@@ -1,0 +1,35 @@
+{% set spoa = spoa if spoa is defined else spoa_item.value %}
+[{{ spoa.section | default('decision') }}]
+spoe-agent {{ spoa.agent_name | default('decision') }}
+    option var-prefix {{ spoa.var_prefix | default('decision') }}
+{% if spoa.groups | default(['decide']) | length > 0 %}
+    groups {{ spoa.groups | default(['decide']) | join(' ') }}
+{% endif %}
+{% if spoa.option_pipelining | default(true) %}
+    option pipelining
+{% endif %}
+    timeout hello      {{ spoa.timeout_hello | default('2s') }}
+    timeout idle       {{ spoa.timeout_idle | default('30s') }}
+    timeout processing {{ spoa.timeout_processing | default('1500ms') }}
+    use-backend {{ spoa.backend.name }}
+    log global
+
+spoe-message {{ spoa.message_name | default('decide') }}
+    args {{ spoa.message_args | default('src=src method=method path=path query=query host=hdr(host) ua=hdr(User-Agent) xff=hdr(X-Forwarded-For) ssl_sni=ssl_fc_sni frontend=var(txn.decision_frontend) backend=var(txn.decision_backend)') }}
+
+spoe-group {{ spoa.group_name | default('decide') }}
+    messages {{ spoa.group_messages | default(['decide']) | join(' ') }}
+
+{% if spoa.extra_config is defined %}
+{{ spoa.extra_config }}
+{% endif -%}
+
+backend {{ spoa.backend.name }}
+    mode {{ spoa.backend.mode | default('tcp') }}
+    balance {{ spoa.backend.balance | default('roundrobin') }}
+{% for server in spoa.backend.servers | default([]) %}
+    server {{ server.name }} {{ server.address }}:{{ server.port }}{% if server.options is defined and server.options | length > 0 %} {{ server.options }}{% endif %}
+{% endfor %}
+{% for line in spoa.backend.extra_lines | default([]) %}
+    {{ line }}
+{% endfor %}

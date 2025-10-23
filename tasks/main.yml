@@ -1,0 +1,26 @@
+---
+- name: Ensure supported operating system family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ["RedHat", "Debian"]
+    fail_msg: >-
+      ansible-haproxy-decision only supports RedHat and Debian families.
+      Detected: {{ ansible_os_family }}
+
+- name: Include platform setup tasks
+  ansible.builtin.include_tasks: "setup-{{ ansible_os_family | lower }}.yml"
+
+- name: Install HAProxy packages
+  ansible.builtin.include_tasks: install.yml
+
+- name: Prepare HAProxy layout and configuration files
+  ansible.builtin.include_tasks: config.yml
+
+- name: Configure optional SPOA services
+  ansible.builtin.include_tasks: spoa.yml
+
+- name: Render HAProxy configuration
+  ansible.builtin.include_tasks: haproxy.yml
+
+- name: Ensure services are enabled and running
+  ansible.builtin.include_tasks: services.yml

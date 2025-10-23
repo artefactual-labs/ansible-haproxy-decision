@@ -1,0 +1,49 @@
+---
+- name: Ensure HAProxy configuration directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_config_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_config_owner }}"
+    group: "{{ haproxy_decision_config_group }}"
+    mode: "0755"
+
+- name: Ensure SPOE configuration directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_spoe_configs_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_config_owner }}"
+    group: "{{ haproxy_decision_config_group }}"
+    mode: "0750"
+
+- name: Ensure HAProxy runtime directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_runtime_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_runtime_dir_owner }}"
+    group: "{{ haproxy_decision_runtime_dir_group }}"
+    mode: "{{ haproxy_decision_runtime_dir_mode }}"
+
+- name: Apply SELinux port labels for HAProxy
+  community.general.seport:
+    ports: "{{ item.port }}"
+    proto: "{{ item.proto | default('tcp') }}"
+    setype: "{{ item.type | default('http_port_t') }}"
+    state: present
+  loop: "{{ haproxy_decision_selinux_port_labels }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto | default('tcp') }}"
+  when:
+    - haproxy_decision_selinux_port_labels | length > 0
+    - ansible_selinux.status | default('disabled') == 'enabled'
+
+- name: Apply SELinux booleans for HAProxy
+  ansible.posix.seboolean:
+    name: "{{ item.name }}"
+    state: "{{ item.state | default(true) }}"
+    persistent: true
+  loop: "{{ haproxy_decision_selinux_booleans }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - haproxy_decision_selinux_booleans | length > 0
+    - ansible_selinux.status | default('disabled') == 'enabled'

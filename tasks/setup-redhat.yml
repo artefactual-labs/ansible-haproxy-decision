@@ -1,0 +1,31 @@
+---
+- name: Record Red Hat major version
+  ansible.builtin.set_fact:
+    haproxy_decision_rhel_major_version: "{{ ansible_distribution_major_version | string }}"
+
+- name: Ensure download directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_rhel_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install SELinux tooling
+  ansible.builtin.dnf:
+    name:
+      - policycoreutils-python-utils
+      - selinux-policy-targeted
+    state: present
+  when: ansible_selinux.status | default('disabled') == 'enabled'
+
+- name: Validate HAProxy release asset configuration
+  ansible.builtin.assert:
+    that:
+      - haproxy_decision_haproxy_release.repo | default('') | length > 0
+      - haproxy_decision_haproxy_release.version | default('') | length > 0
+      - haproxy_decision_haproxy_release.assets[haproxy_decision_rhel_major_version] | default('') | length > 0
+    fail_msg: >-
+      Missing HAProxy release metadata for EL{{ haproxy_decision_rhel_major_version }}.
+      Override haproxy_decision_haproxy_release.assets to point at the RPM published
+      in artefactual-labs/haproxy-el-packaging.

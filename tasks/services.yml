@@ -1,0 +1,95 @@
+---
+- name: Ensure HAProxy service override directory exists
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ haproxy_decision_service_name }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - haproxy_decision_manage_service | bool
+    - haproxy_decision_service_override | length > 0
+
+- name: Deploy HAProxy service override
+  ansible.builtin.template:
+    src: "{{ haproxy_decision_service_override }}"
+    dest: "/etc/systemd/system/{{ haproxy_decision_service_name }}.service.d/override.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - haproxy_decision_manage_service | bool
+    - haproxy_decision_service_override | length > 0
+  notify:
+    - reload systemd
+
+- name: Manage coraza-spoa systemd override
+  vars:
+    coraza_spoa_data: "{{ haproxy_decision_spoas.get('coraza', {}) }}"
+    coraza_spoa_service: "{{ coraza_spoa_data.get('service', 'coraza-spoa') }}"
+    coraza_spoa_override_path: "/etc/systemd/system/{{ coraza_spoa_service }}.service.d"
+    coraza_spoa_override_file: "{{ coraza_spoa_override_path }}/relax-bindreadonlypaths.conf"
+  when:
+    - coraza_spoa_service | length > 0
+    - haproxy_decision_manage_spoa_services | bool
+    - (coraza_spoa_data.get('enabled', false) | bool)
+  block:
+    - name: Ensure coraza-spoa override directory exists
+      ansible.builtin.file:
+        path: "{{ coraza_spoa_override_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: haproxy_decision_coraza_spoa_relax_systemd | bool
+
+    - name: Deploy coraza-spoa override
+      ansible.builtin.template:
+        src: systemd/coraza-spoa-relax.conf.j2
+        dest: "{{ coraza_spoa_override_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: haproxy_decision_coraza_spoa_relax_systemd | bool
+      notify:
+        - reload systemd
+        - restart coraza-spoa
+
+    - name: Remove coraza-spoa override
+      ansible.builtin.file:
+        path: "{{ coraza_spoa_override_file }}"
+        state: absent
+      when: not (haproxy_decision_coraza_spoa_relax_systemd | bool)
+      notify:
+        - reload systemd
+        - restart coraza-spoa
+
+- name: Ensure HAProxy service state
+  ansible.builtin.service:
+    name: "{{ haproxy_decision_service_name }}"
+    state: "{{ haproxy_decision_service_state | default(omit) }}"
+    enabled: "{{ haproxy_decision_service_enabled | default(omit) }}"
+  when: haproxy_decision_manage_service | bool
+
+- name: Ensure SPOA services are running
+  ansible.builtin.service:
+    name: "{{ item.value.service }}"
+    state: "{{ haproxy_decision_spoa_service_state | default(omit) }}"
+    enabled: "{{ haproxy_decision_spoa_service_enabled | default(omit) }}"
+  loop: "{{ haproxy_decision_enabled_spoas | default([]) }}"
+  loop_control:
+    label: "{{ item.value.service | default(item.key) }}"
+  when:
+    - haproxy_decision_manage_spoa_services | bool
+    - item.value.service is defined
+
+- name: Ensure SPOA timers are active
+  ansible.builtin.systemd:
+    name: "{{ item.1 }}"
+    state: "{{ haproxy_decision_spoa_service_state | default(omit) }}"
+    enabled: "{{ haproxy_decision_spoa_service_enabled | default(omit) }}"
+  loop: "{{ haproxy_decision_enabled_spoas | default([]) | subelements('value.timers', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.1 }}"
+  when:
+    - haproxy_decision_manage_spoa_services | bool

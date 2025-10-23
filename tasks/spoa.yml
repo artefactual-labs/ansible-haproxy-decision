@@ -1,0 +1,16 @@
+---
+- name: Determine enabled SPOA services
+  ansible.builtin.set_fact:
+    haproxy_decision_enabled_spoas: >-
+      {{ haproxy_decision_spoas | dict2items
+         | selectattr('value.enabled', 'defined')
+         | selectattr('value.enabled', 'equalto', true)
+         | list }}
+
+- name: Install and configure SPOA services
+  ansible.builtin.include_tasks: spoa-item.yml
+  loop: "{{ haproxy_decision_enabled_spoas | default([]) }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    spoa_item: "{{ item }}"

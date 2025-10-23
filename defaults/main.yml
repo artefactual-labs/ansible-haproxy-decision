@@ -1,0 +1,193 @@
+---
+haproxy_decision_manage_repo: true
+
+haproxy_decision_rhel_download_dir: /var/cache/ansible/haproxy-decision
+haproxy_decision_haproxy_release:
+  repo: artefactual-labs/haproxy-el-packaging
+  version: "2.8.16"
+  assets:
+    "8": haproxy-2.8.16-1.el8.x86_64.rpm
+    "9": haproxy-2.8.16-1.el9.x86_64.rpm
+  checksums: {}
+haproxy_decision_rhel_disable_gpg_check: false
+haproxy_decision_release_url_template: "https://github.com/{repo}/releases/download/{version}/{asset}"
+
+haproxy_decision_apt_repos: []
+haproxy_decision_ubuntu_repo: "ppa:vbernat/haproxy-2.8"
+haproxy_decision_apt_update_cache: true
+haproxy_decision_apt_cache_valid_time: 3600
+haproxy_decision_debian_repo_prereq_packages:
+  - software-properties-common
+  - ca-certificates
+  - apt-transport-https
+  - gnupg
+
+haproxy_decision_haproxy_package: haproxy
+haproxy_decision_extra_packages: []
+haproxy_decision_package_state: present
+
+haproxy_decision_service_name: haproxy
+haproxy_decision_manage_service: true
+haproxy_decision_service_state: started
+haproxy_decision_service_enabled: true
+
+haproxy_decision_config_dir: /etc/haproxy
+haproxy_decision_config_path: "{{ haproxy_decision_config_dir }}/haproxy.cfg"
+haproxy_decision_config_template: haproxy.cfg.j2
+haproxy_decision_config_owner: root
+haproxy_decision_config_group: haproxy
+haproxy_decision_config_mode: "0640"
+haproxy_decision_manage_config: true
+haproxy_decision_extra_config: ""
+haproxy_decision_runtime_dir: /run/haproxy
+haproxy_decision_runtime_dir_owner: root
+haproxy_decision_runtime_dir_group: haproxy
+haproxy_decision_runtime_dir_mode: "0750"
+haproxy_decision_binary_path: /usr/sbin/haproxy
+haproxy_decision_setcap_net_bind_service: true
+
+haproxy_decision_global_settings:
+  - "log /dev/log local0"
+  - "log /dev/log local1 notice"
+  - "user haproxy"
+  - "group haproxy"
+  - "daemon"
+  - "maxconn 2048"
+  - "stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners"
+  - "stats timeout 30s"
+
+haproxy_decision_defaults_settings:
+  - "log global"
+  - "mode http"
+  - "option httplog"
+  - "option dontlognull"
+  - "timeout connect 10s"
+  - "timeout client 50s"
+  - "timeout server 50s"
+  - "retries 3"
+
+haproxy_decision_extra_global: []
+haproxy_decision_extra_defaults: []
+haproxy_decision_listeners: []
+haproxy_decision_frontends: []
+haproxy_decision_backends: []
+
+haproxy_decision_spoe_configs_dir: "{{ haproxy_decision_config_dir }}/spoe.d"
+haproxy_decision_spoe_include_glob: "{{ haproxy_decision_spoe_configs_dir }}/*.cfg"
+haproxy_decision_spoe_include_configs: false
+haproxy_decision_spoa_config_owner: root
+haproxy_decision_spoa_config_group: haproxy
+haproxy_decision_spoa_config_mode: "0640"
+haproxy_decision_spoa_env_owner: root
+haproxy_decision_spoa_env_group: root
+haproxy_decision_spoa_env_mode: "0644"
+haproxy_decision_spoa_package_state: present
+haproxy_decision_spoa_service_state: started
+haproxy_decision_spoa_service_enabled: true
+haproxy_decision_manage_spoa_configs: true
+haproxy_decision_manage_spoa_env: true
+haproxy_decision_manage_spoa_services: true
+haproxy_decision_spoa_release_url_template: "{{ haproxy_decision_release_url_template }}"
+haproxy_decision_selinux_port_labels: []
+haproxy_decision_selinux_booleans:
+  - name: httpd_can_network_connect
+    state: true
+haproxy_decision_service_override: ""
+haproxy_decision_download_retries: 5
+haproxy_decision_download_delay: 10
+
+haproxy_decision_coraza_spoa_relax_systemd: false
+
+haproxy_decision_spoas:
+  decision:
+    enabled: false
+    package:
+      RedHat: decision-spoa
+      Debian: decision-spoa
+    service: decision-spoa
+    timers:
+      - decision-geoip-db-updates.timer
+    env_file: /etc/default/decision-spoa
+    env_template: default/decision-spoa.env.j2
+    env_opts:
+      - "--listen 127.0.0.1:9908"
+      - "--metrics 127.0.0.1:9907"
+      - "--root /etc/decision-policy"
+      - "--city-db /var/lib/decision/GeoLite2-City.mmdb"
+      - "--asn-db /var/lib/decision/GeoLite2-ASN.mmdb"
+      - "--city-url https://hub-data.crowdsec.net/mmdb_update/GeoLite2-City.mmdb"
+      - "--asn-url https://hub-data.crowdsec.net/mmdb_update/GeoLite2-ASN.mmdb"
+      - "--best-effort"
+      - "--metrics-host-label"
+    config_template: spoa/decision-spoa.cfg.j2
+    config_path: "{{ haproxy_decision_spoe_configs_dir }}/decision-spoa.cfg"
+    release:
+      repo: artefactual-labs/decision-spoa
+      version: ""
+      assets: {}
+      checksums: {}
+    backend:
+      name: decision_spoa_backend
+      balance: roundrobin
+      mode: tcp
+      servers:
+        - name: decision_spoa
+          address: 127.0.0.1
+          port: 9908
+          options: "check"
+  coraza:
+    enabled: false
+    package:
+      RedHat: coraza-spoa-crs
+      Debian: coraza-spoa-crs
+    service: coraza-spoa
+    env_file: /etc/default/coraza-spoa
+    env_template: default/coraza-spoa.env.j2
+    env_opts:
+      - "-config /etc/coraza-spoa/config.yaml"
+    config_template: spoa/coraza-spoa.cfg.j2
+    config_path: "{{ haproxy_decision_spoe_configs_dir }}/coraza-spoa.cfg"
+    release:
+      repo: artefactual-labs/coraza-spoa-crs-package
+      version: ""
+      assets: {}
+      checksums: {}
+    backend:
+      name: coraza_spoa_backend
+      balance: roundrobin
+      mode: tcp
+      servers:
+        - name: coraza_spoa
+          address: 127.0.0.1
+          port: 9000
+          options: "check"
+  cookie_guard:
+    enabled: false
+    package:
+      RedHat: cookie-guard-spoa
+      Debian: cookie-guard-spoa
+    service: cookie-guard-spoa
+    env_file: /etc/default/cookie-guard-spoa
+    env_template: default/cookie-guard-spoa.env.j2
+    env_opts:
+      - "-listen 127.0.0.1:9903"
+      - "-metrics 127.0.0.1:9904"
+      - "-secret /etc/cookie-guard-spoa/secret.key"
+      - "-ttl 1h"
+      - "-expected-len 168"
+    config_template: spoa/cookie-guard-spoa.cfg.j2
+    config_path: "{{ haproxy_decision_spoe_configs_dir }}/cookie-guard-spoa.cfg"
+    release:
+      repo: artefactual-labs/cookie-guard-spoa
+      version: ""
+      assets: {}
+      checksums: {}
+    backend:
+      name: cookie_guard_spoa_backend
+      balance: roundrobin
+      mode: tcp
+      servers:
+        - name: cookie_guard_spoa
+          address: 127.0.0.1
+          port: 9903
+          options: "check"

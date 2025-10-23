@@ -1,0 +1,10 @@
+# Managed by ansible-haproxy-decision
+[Service]
+EnvironmentFile=-/etc/sysconfig/haproxy
+ExecStartPre=
+ExecStartPre=/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -c -q $OPTIONS
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid $OPTIONS
+ExecReload=/usr/sbin/haproxy -Ws -f /etc/haproxy/haproxy.cfg -c -q $OPTIONS
+ExecReload=/usr/bin/systemctl kill --kill-who=main --signal=USR2 {{ haproxy_decision_service_name }}.service
+#User=
+#Group=

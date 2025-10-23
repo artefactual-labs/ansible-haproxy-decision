@@ -1,0 +1,6 @@
+---
+roles:
+  - name: geerlingguy.varnish
+collections:
+  - name: community.general
+  - name: ansible.posix

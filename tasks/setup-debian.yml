@@ -1,0 +1,35 @@
+---
+- name: Install repository management prerequisites
+  ansible.builtin.apt:
+    name: "{{ haproxy_decision_debian_repo_prereq_packages }}"
+    state: present
+    update_cache: false
+  when:
+    - haproxy_decision_manage_repo | bool
+    - haproxy_decision_debian_repo_prereq_packages | length > 0
+
+- name: Configure HAProxy PPA
+  ansible.builtin.apt_repository:
+    repo: "{{ haproxy_decision_ubuntu_repo }}"
+    state: present
+  when:
+    - haproxy_decision_manage_repo | bool
+    - haproxy_decision_ubuntu_repo | default("") | length > 0
+
+- name: Configure additional APT repositories
+  ansible.builtin.apt_repository:
+    repo: "{{ (item.repo if (item is mapping) else item) }}"
+    state: "{{ item.state | default('present') }}"
+    filename: "{{ item.filename | default(omit) }}"
+    codename: "{{ item.codename | default(omit) }}"
+    update_cache: false
+  loop: "{{ haproxy_decision_apt_repos }}"
+  loop_control:
+    label: "{{ (item.repo if (item is mapping) else item) }}"
+  when: haproxy_decision_manage_repo | bool
+
+- name: Update APT cache if needed
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ haproxy_decision_apt_cache_valid_time | int }}"
+  when: haproxy_decision_apt_update_cache | bool

@@ -1,0 +1,40 @@
+---
+- name: reload haproxy
+  ansible.builtin.service:
+    name: "{{ haproxy_decision_service_name }}"
+    state: reloaded
+  listen: reload haproxy
+  when: haproxy_decision_manage_service | bool
+
+- name: restart haproxy
+  ansible.builtin.service:
+    name: "{{ haproxy_decision_service_name }}"
+    state: restarted
+  listen: restart haproxy
+  when: haproxy_decision_manage_service | bool
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: reload systemd
+
+- name: restart decision-spoa
+  ansible.builtin.service:
+    name: decision-spoa
+    state: restarted
+  listen: restart decision-spoa
+  when: (haproxy_decision_spoas.decision.enabled | default(false)) | bool
+
+- name: restart coraza-spoa
+  ansible.builtin.service:
+    name: coraza-spoa
+    state: restarted
+  listen: restart coraza-spoa
+  when: (haproxy_decision_spoas.coraza.enabled | default(false)) | bool
+
+- name: restart cookie-guard-spoa
+  ansible.builtin.service:
+    name: cookie-guard-spoa
+    state: restarted
+  listen: restart cookie-guard-spoa
+  when: (haproxy_decision_spoas.cookie_guard.enabled | default(false)) | bool

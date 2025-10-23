@@ -1,0 +1,77 @@
+# Managed by ansible-haproxy-decision
+
+{% set enabled_spoas = haproxy_decision_spoas
+   | dict2items
+   | selectattr('value.enabled', 'equalto', true)
+   | list %}
+
+{% if (haproxy_decision_spoe_include_configs | bool) and (haproxy_decision_manage_spoa_configs | bool) and (enabled_spoas | length > 0) %}
+# Include SPOE configuration managed by ansible-haproxy-decision.
+include {{ haproxy_decision_spoe_include_glob }}
+{% endif %}
+
+global
+{% for line in haproxy_decision_global_settings | default([]) %}
+  {{ line }}
+{% endfor %}
+{% for line in haproxy_decision_extra_global | default([]) %}
+  {{ line }}
+{% endfor %}
+
+defaults
+{% for line in haproxy_decision_defaults_settings | default([]) %}
+  {{ line }}
+{% endfor %}
+{% for line in haproxy_decision_extra_defaults | default([]) %}
+  {{ line }}
+{% endfor %}
+
+{% for listener in haproxy_decision_listeners | default([]) %}
+listen {{ listener.name }}
+{% for directive in listener.lines | default([]) %}
+  {{ directive }}
+{% endfor %}
+
+{% endfor %}
+{% for frontend in haproxy_decision_frontends | default([]) %}
+frontend {{ frontend.name }}
+{% for directive in frontend.lines | default([]) %}
+  {{ directive }}
+{% endfor %}
+{% if frontend.filters | default([]) | length > 0 %}
+{%   for filter in frontend.filters %}
+  filter {{ filter }}
+{%   endfor %}
+{% endif %}
+{% if frontend.spoe | default([]) | length > 0 %}
+{%   for spoe in frontend.spoe %}
+  http-request set-var({{ spoe.var_scope | default('txn') }}.{{ spoe.var_name | default(spoe.engine ~ '_context') }}) {{ spoe.var_value | default('str(' ~ spoe.engine ~ ')') }}{% if spoe.when is defined %} {{ spoe.when }}{% endif %}
+  filter spoe engine {{ spoe.engine }} config {{ spoe.config }}
+{%     if spoe.group is defined %}
+  http-request send-spoe-group {{ spoe.engine }} {{ spoe.group }}{% if spoe.group_condition is defined %} {{ spoe.group_condition }}{% endif %}
+{%     endif %}
+{%   endfor %}
+{% endif %}
+
+{% endfor %}
+{% for backend in haproxy_decision_backends | default([]) %}
+backend {{ backend.name }}
+{% for directive in backend.lines | default([]) %}
+  {{ directive }}
+{% endfor %}
+{% if backend.filters | default([]) | length > 0 %}
+{%   for filter in backend.filters %}
+  filter {{ filter }}
+{%   endfor %}
+{% endif %}
+{% if backend.spoe | default([]) | length > 0 %}
+{%   for spoe in backend.spoe %}
+  filter spoe engine {{ spoe.engine }} config {{ spoe.config }}
+{%     if spoe.group is defined %}
+  http-request send-spoe-group {{ spoe.engine }} {{ spoe.group }}{% if spoe.group_condition is defined %} {{ spoe.group_condition }}{% endif %}
+{%     endif %}
+{%   endfor %}
+{% endif %}
+
+{% endfor %}
+{{ haproxy_decision_extra_config }}

@@ -1,0 +1,46 @@
+---
+- name: Determine HAProxy release asset for EL{{ haproxy_decision_rhel_major_version }}
+  ansible.builtin.set_fact:
+    haproxy_decision_haproxy_asset: "{{ haproxy_decision_haproxy_release.assets[haproxy_decision_rhel_major_version] | default('') }}"
+
+- name: Ensure HAProxy release asset is defined
+  ansible.builtin.assert:
+    that:
+      - haproxy_decision_haproxy_asset | length > 0
+    fail_msg: >-
+      No HAProxy RPM asset configured for EL{{ haproxy_decision_rhel_major_version }}.
+      Override haproxy_decision_haproxy_release.assets with the filename published in
+      the haproxy-el-packaging release.
+
+- name: Determine HAProxy release download URL
+  ansible.builtin.set_fact:
+    haproxy_decision_haproxy_asset_url: >-
+      {{ (haproxy_decision_haproxy_release.url_template
+          | default(haproxy_decision_release_url_template))
+         | replace('{repo}', haproxy_decision_haproxy_release.repo)
+         | replace('{version}', haproxy_decision_haproxy_release.version)
+         | replace('{asset}', haproxy_decision_haproxy_asset) }}
+
+- name: Download HAProxy release artifact
+  ansible.builtin.get_url:
+    url: "{{ haproxy_decision_haproxy_asset_url }}"
+    dest: "{{ haproxy_decision_rhel_download_dir }}/{{ haproxy_decision_haproxy_asset }}"
+    mode: "0644"
+    checksum: "{{ haproxy_decision_haproxy_release.checksums[haproxy_decision_rhel_major_version] | default(omit) }}"
+  register: haproxy_decision_haproxy_download
+  retries: "{{ haproxy_decision_download_retries }}"
+  delay: "{{ haproxy_decision_download_delay }}"
+  until: haproxy_decision_haproxy_download is succeeded
+
+- name: Install HAProxy from downloaded RPM
+  ansible.builtin.dnf:
+    name: "{{ haproxy_decision_rhel_download_dir }}/{{ haproxy_decision_haproxy_asset }}"
+    state: "{{ haproxy_decision_package_state }}"
+    disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
+
+- name: Install additional HAProxy dependencies
+  ansible.builtin.dnf:
+    name: "{{ haproxy_decision_extra_packages }}"
+    state: "{{ haproxy_decision_package_state }}"
+    disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
+  when: haproxy_decision_extra_packages | length > 0

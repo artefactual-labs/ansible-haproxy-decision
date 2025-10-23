@@ -1,0 +1,220 @@
+---
+- name: Provision Rocky Linux 9 environment for HAProxy decision tests
+  hosts: haproxy
+  become: true
+  vars:
+    haproxy_decision_manage_repo: false
+    haproxy_decision_coraza_spoa_relax_systemd: true
+    haproxy_decision_rhel_disable_gpg_check: true
+    haproxy_decision_selinux_port_labels:
+      - { port: 80 }
+      - { port: 443 }
+      - { port: 6081 }
+      - { port: 6082 }
+      - { port: 9000 }
+      - { port: 9080 }
+      - { port: 9903 }
+      - { port: 9904 }
+      - { port: 9905 }
+      - { port: 9906 }
+      - { port: 9907 }
+      - { port: 9908 }
+      - { port: 8404 }
+    haproxy_decision_frontends:
+      - name: public_http
+        lines:
+          - "bind *:80"
+          - "mode http"
+          - "acl is_nginx path_beg /backend"
+          - "use_backend nginx_backend if is_nginx"
+          - "default_backend varnish_backend"
+      - name: prom
+        lines:
+          - "bind 127.0.0.1:8404"
+          - "mode http"
+          - "http-request use-service prometheus-exporter if { path /metrics }"
+    haproxy_decision_backends:
+      - name: varnish_backend
+        lines:
+          - "mode http"
+          - "balance roundrobin"
+          - "server varnish 127.0.0.1:6081 check"
+      - name: nginx_backend
+        lines:
+          - "mode http"
+          - "http-request set-path %[path,regsub(^/backend,/,)]"
+          - "server nginx 127.0.0.1:9080 check"
+    haproxy_decision_spoas:
+      decision:
+        enabled: true
+        service: decision-spoa
+        env_file: /etc/default/decision-spoa
+        env_template: default/decision-spoa.env.j2
+        env_opts:
+          - "--listen 127.0.0.1:9908"
+          - "--metrics 127.0.0.1:9907"
+          - "--root /etc/decision-policy"
+          - "--city-db /var/lib/decision/GeoLite2-City.mmdb"
+          - "--asn-db /var/lib/decision/GeoLite2-ASN.mmdb"
+          - "--city-url https://hub-data.crowdsec.net/mmdb_update/GeoLite2-City.mmdb"
+          - "--asn-url https://hub-data.crowdsec.net/mmdb_update/GeoLite2-ASN.mmdb"
+          - "--best-effort"
+          - "--metrics-host-label"
+        config_template: spoa/decision-spoa.cfg.j2
+        config_path: "{{ haproxy_decision_spoe_configs_dir }}/decision-spoa.cfg"
+        timers:
+          - decision-geoip-db-updates.timer
+        backend:
+          name: decision_spoa_backend
+          mode: tcp
+          balance: roundrobin
+          servers:
+            - name: decision_spoa
+              address: 127.0.0.1
+              port: 9908
+              options: "check"
+        release:
+          repo: artefactual-labs/decision-spoa
+          version: "v0.1.0"
+          assets:
+            "9": decision-spoa_0.1.0_amd64.rpm
+      coraza:
+        enabled: true
+        service: coraza-spoa
+        env_file: /etc/default/coraza-spoa
+        env_template: default/coraza-spoa.env.j2
+        env_opts:
+          - "-config /etc/coraza-spoa/config.yaml"
+        config_template: spoa/coraza-spoa.cfg.j2
+        config_path: "{{ haproxy_decision_spoe_configs_dir }}/coraza-spoa.cfg"
+        backend:
+          name: coraza_spoa_backend
+          mode: tcp
+          balance: roundrobin
+          servers:
+            - name: coraza_spoa
+              address: 127.0.0.1
+              port: 9000
+              options: "check"
+        release:
+          repo: artefactual-labs/coraza-spoa-crs-package
+          version: "v0.1.0"
+          assets:
+            "9": coraza-spoa-crs_0.1.0-1_amd64.rpm
+      cookie_guard:
+        enabled: true
+        service: cookie-guard-spoa
+        env_file: /etc/default/cookie-guard-spoa
+        env_template: default/cookie-guard-spoa.env.j2
+        env_opts:
+          - "-listen 127.0.0.1:9903"
+          - "-metrics 127.0.0.1:9904"
+          - "-secret /etc/cookie-guard-spoa/secret.key"
+          - "-ttl 1h"
+          - "-expected-len 168"
+        config_template: spoa/cookie-guard-spoa.cfg.j2
+        config_path: "{{ haproxy_decision_spoe_configs_dir }}/cookie-guard-spoa.cfg"
+        backend:
+          name: cookie_guard_spoa_backend
+          mode: tcp
+          balance: roundrobin
+          servers:
+            - name: cookie_guard_spoa
+              address: 127.0.0.1
+              port: 9903
+              options: "check"
+        release:
+          repo: artefactual-labs/cookie-guard-spoa
+          version: "v0.1.0"
+          assets:
+            "9": cookie-guard-spoa_0.1.0_amd64.rpm
+
+  pre_tasks:
+    - name: Allow nginx backend port in SELinux
+      community.general.seport:
+        ports: 9080
+        proto: tcp
+        setype: http_port_t
+        state: present
+      when: ansible_selinux.status | default('disabled') == 'enabled'
+
+    - name: Install nginx
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Install nginx base configuration
+      ansible.builtin.template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart nginx
+
+    - name: Deploy nginx demo backend configuration
+      ansible.builtin.template:
+        src: templates/nginx-demo.conf.j2
+        dest: /etc/nginx/conf.d/demo.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart nginx
+
+    - name: Remove default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/default.conf
+        state: absent
+      notify: restart nginx
+
+    - name: Deploy backend index page
+      ansible.builtin.copy:
+        dest: /usr/share/nginx/html/index.html
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>HAProxy Decision Test</title>
+            </head>
+            <body>
+              <h1>hello from varnish backend</h1>
+            </body>
+          </html>
+
+  roles:
+    - role: geerlingguy.varnish
+      vars:
+        varnish_listen_port: 6081
+        varnish_storage: "malloc,256M"
+        varnish_default_vcl_template_path: "{{ playbook_dir }}/templates/default.vcl.j2"
+        varnish_default_backend_host: "127.0.0.1"
+        varnish_default_backend_port: "9080"
+    - role: ansible-haproxy-decision
+
+  post_tasks:
+    - name: Ensure nginx service is running
+      ansible.builtin.systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Ensure Varnish service is running
+      ansible.builtin.systemd:
+        name: varnish
+        state: started
+        enabled: true
+
+  handlers:
+    - name: restart nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+
+    - name: restart varnish
+      ansible.builtin.systemd:
+        name: varnish
+        state: restarted

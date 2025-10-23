@@ -1,0 +1,39 @@
+{% set spoa = spoa if spoa is defined else spoa_item.value %}
+[{{ spoa.section | default('coraza') }}]
+spoe-agent {{ spoa.agent_name | default('coraza-agent') }}
+    messages {{ spoa.messages | default(['coraza-req']) | join(' ') }}
+    option var-prefix {{ spoa.var_prefix | default('coraza') }}
+{% if spoa.set_on_error | default('error') %}
+    option set-on-error {{ spoa.set_on_error | default('error') }}
+{% endif %}
+    timeout hello           {{ spoa.timeout_hello | default('2s') }}
+    timeout idle            {{ spoa.timeout_idle | default('2m') }}
+    timeout processing      {{ spoa.timeout_processing | default('500ms') }}
+    use-backend {{ spoa.backend.name }}
+    log global
+
+{% set request = spoa.request_message | default({}) %}
+spoe-message {{ request.name | default('coraza-req') }}
+    args {{ request.args | default('app=var(proc.coraza_app) id=unique-id src-ip=src src-port=src_port dst-ip=dst dst-port=dst_port method=method path=path query=query version=req.ver headers=req.hdrs body=req.body') }}
+    event {{ request.event | default('on-frontend-http-request') }}
+
+{% set response = spoa.response_message | default({'enabled': True}) %}
+{% if response.enabled | default(True) %}
+spoe-message {{ response.name | default('coraza-res') }}
+    args {{ response.args | default('app=var(proc.coraza_app) id=unique-id version=res.ver status=status headers=res.hdrs body=res.body') }}
+    event {{ response.event | default('on-http-response') }}
+{% endif %}
+
+{% if spoa.extra_config is defined %}
+{{ spoa.extra_config }}
+{% endif -%}
+
+backend {{ spoa.backend.name }}
+    mode {{ spoa.backend.mode | default('tcp') }}
+    balance {{ spoa.backend.balance | default('roundrobin') }}
+{% for server in spoa.backend.servers | default([]) %}
+    server {{ server.name }} {{ server.address }}:{{ server.port }}{% if server.options is defined and server.options | length > 0 %} {{ server.options }}{% endif %}
+{% endfor %}
+{% for line in spoa.backend.extra_lines | default([]) %}
+    {{ line }}
+{% endfor %}

@@ -1,0 +1,12 @@
+---
+- name: Install HAProxy package
+  ansible.builtin.package:
+    name: "{{ haproxy_decision_haproxy_package }}"
+    state: "{{ haproxy_decision_package_state }}"
+  register: haproxy_decision_package_result
+
+- name: Install additional HAProxy dependencies
+  ansible.builtin.package:
+    name: "{{ haproxy_decision_extra_packages }}"
+    state: "{{ haproxy_decision_package_state }}"
+  when: haproxy_decision_extra_packages | length > 0
