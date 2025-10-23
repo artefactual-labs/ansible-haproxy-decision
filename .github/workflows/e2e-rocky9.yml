@@ -10,6 +10,11 @@ jobs:
   e2e-rocky9:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      TERM: xterm-256color
+      CLICOLOR_FORCE: "1"
+      ANSIBLE_FORCE_COLOR: "true"
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

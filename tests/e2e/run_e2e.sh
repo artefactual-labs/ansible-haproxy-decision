@@ -86,7 +86,7 @@ galaxy_retry "ansible-galaxy collection install -r '${SCRIPT_DIR}/requirements.y
 
 echo ":: Running Ansible playbook"
 ANSIBLE_EXIT=0
-ANSIBLE_STDOUT_CALLBACK=debug ansible-playbook \
+ANSIBLE_FORCE_COLOR=1 ANSIBLE_STDOUT_CALLBACK=debug ansible-playbook \
   -i "${SCRIPT_DIR}/inventory.ini" \
   "${SCRIPT_DIR}/site.yml" || ANSIBLE_EXIT=$?
 
