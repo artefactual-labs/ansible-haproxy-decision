@@ -2,6 +2,10 @@
 - name: Record Red Hat major version
   ansible.builtin.set_fact:
     haproxy_decision_rhel_major_version: "{{ ansible_distribution_major_version | string }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
 - name: Ensure download directory exists
   ansible.builtin.file:
@@ -10,6 +14,10 @@
     owner: root
     group: root
     mode: "0755"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
 - name: Install SELinux tooling
   ansible.builtin.dnf:
@@ -18,14 +26,38 @@
       - selinux-policy-targeted
     state: present
   when: ansible_selinux.status | default('disabled') == 'enabled'
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
-- name: Validate HAProxy release asset configuration
+- name: Derive HAProxy RPM filename
+  ansible.builtin.set_fact:
+    haproxy_decision_haproxy_rpm_effective: "{{ (
+        haproxy_decision_haproxy_rpm | default('') | string | trim
+      ) if (haproxy_decision_haproxy_rpm | default('') | string | trim) | length > 0
+      else 'haproxy-' ~ (haproxy_decision_haproxy_version | string | trim) ~ '-' ~
+           (haproxy_decision_haproxy_release_number | string | trim) ~ '.el' ~
+           (haproxy_decision_rhel_major_version | string | trim) ~ '.' ~
+           (haproxy_decision_haproxy_rpm_arch | string | trim) ~ '.rpm' }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
+    - haproxy-decision-install
+
+- name: Validate HAProxy package configuration
   ansible.builtin.assert:
     that:
-      - haproxy_decision_haproxy_release.repo | default('') | length > 0
-      - haproxy_decision_haproxy_release.version | default('') | length > 0
-      - haproxy_decision_haproxy_release.assets[haproxy_decision_rhel_major_version] | default('') | length > 0
+      - (haproxy_decision_haproxy_repo | default('') | string) | length > 0
+      - (haproxy_decision_haproxy_version | default('') | string) | length > 0
+      - (haproxy_decision_haproxy_release_number | default('') | string) | length > 0
+      - (haproxy_decision_haproxy_rpm_effective | default('') | string) | length > 0
     fail_msg: >-
-      Missing HAProxy release metadata for EL{{ haproxy_decision_rhel_major_version }}.
-      Override haproxy_decision_haproxy_release.assets to point at the RPM published
-      in artefactual-labs/haproxy-el-packaging.
+      Missing HAProxy package metadata for EL{{ haproxy_decision_rhel_major_version }}.
+      Set haproxy_decision_haproxy_rpm (or the supporting version variables)
+      so the role can fetch the HAProxy RPM.
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform

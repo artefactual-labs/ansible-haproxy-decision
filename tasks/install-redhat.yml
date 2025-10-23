@@ -1,42 +1,46 @@
----
-- name: Determine HAProxy release asset for EL{{ haproxy_decision_rhel_major_version }}
+- name: Capture HAProxy RPM filename
   ansible.builtin.set_fact:
-    haproxy_decision_haproxy_asset: "{{ haproxy_decision_haproxy_release.assets[haproxy_decision_rhel_major_version] | default('') }}"
-
-- name: Ensure HAProxy release asset is defined
-  ansible.builtin.assert:
-    that:
-      - haproxy_decision_haproxy_asset | length > 0
-    fail_msg: >-
-      No HAProxy RPM asset configured for EL{{ haproxy_decision_rhel_major_version }}.
-      Override haproxy_decision_haproxy_release.assets with the filename published in
-      the haproxy-el-packaging release.
+    haproxy_decision_haproxy_filename: "{{ haproxy_decision_haproxy_rpm_effective | trim }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install
 
 - name: Determine HAProxy release download URL
   ansible.builtin.set_fact:
     haproxy_decision_haproxy_asset_url: >-
-      {{ (haproxy_decision_haproxy_release.url_template
-          | default(haproxy_decision_release_url_template))
-         | replace('{repo}', haproxy_decision_haproxy_release.repo)
-         | replace('{version}', haproxy_decision_haproxy_release.version)
-         | replace('{asset}', haproxy_decision_haproxy_asset) }}
+      {{
+        (haproxy_decision_haproxy_url_template
+         | replace('{repo}', haproxy_decision_haproxy_repo | trim)
+         | replace('{version}', haproxy_decision_haproxy_version | trim)
+         | replace('{asset}', haproxy_decision_haproxy_filename | trim)
+        ) | trim
+      }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install
 
 - name: Download HAProxy release artifact
   ansible.builtin.get_url:
     url: "{{ haproxy_decision_haproxy_asset_url }}"
-    dest: "{{ haproxy_decision_rhel_download_dir }}/{{ haproxy_decision_haproxy_asset }}"
+    dest: "{{ (haproxy_decision_rhel_download_dir ~ '/' ~ haproxy_decision_haproxy_filename) | trim }}"
     mode: "0644"
-    checksum: "{{ haproxy_decision_haproxy_release.checksums[haproxy_decision_rhel_major_version] | default(omit) }}"
+    checksum: "{{ haproxy_decision_haproxy_checksums[haproxy_decision_rhel_major_version] | default(omit) }}"
   register: haproxy_decision_haproxy_download
   retries: "{{ haproxy_decision_download_retries }}"
   delay: "{{ haproxy_decision_download_delay }}"
   until: haproxy_decision_haproxy_download is succeeded
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install
 
 - name: Install HAProxy from downloaded RPM
   ansible.builtin.dnf:
-    name: "{{ haproxy_decision_rhel_download_dir }}/{{ haproxy_decision_haproxy_asset }}"
+    name: "{{ (haproxy_decision_rhel_download_dir ~ '/' ~ haproxy_decision_haproxy_filename) | trim }}"
     state: "{{ haproxy_decision_package_state }}"
     disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install
 
 - name: Install additional HAProxy dependencies
   ansible.builtin.dnf:
@@ -44,3 +48,6 @@
     state: "{{ haproxy_decision_package_state }}"
     disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
   when: haproxy_decision_extra_packages | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install

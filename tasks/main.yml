@@ -6,21 +6,43 @@
     fail_msg: >-
       ansible-haproxy-decision only supports RedHat and Debian families.
       Detected: {{ ansible_os_family }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-verify
 
 - name: Include platform setup tasks
   ansible.builtin.include_tasks: "setup-{{ ansible_os_family | lower }}.yml"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
 
 - name: Install HAProxy packages
   ansible.builtin.include_tasks: install.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-install
 
 - name: Prepare HAProxy layout and configuration files
   ansible.builtin.include_tasks: config.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
 
 - name: Configure optional SPOA services
   ansible.builtin.include_tasks: spoa.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
 
 - name: Render HAProxy configuration
   ansible.builtin.include_tasks: haproxy.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-haproxy
 
 - name: Ensure services are enabled and running
   ansible.builtin.include_tasks: services.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-services

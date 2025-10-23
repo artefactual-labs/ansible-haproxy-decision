@@ -1,23 +1,190 @@
 ---
-- name: Prepare release metadata for {{ spoa_item.key }} SPOA
+- name: Initialise release defaults for {{ spoa_item.key }} SPOA
   ansible.builtin.set_fact:
-    spoa_release: "{{ spoa_item.value.release | default({}) }}"
+    spoa_release_defaults: "{{ haproxy_decision_spoa_releases.get(spoa_item.key, {}) }}"
+    spoa_release_override: "{{ spoa_item.value.release | default({}) }}"
     spoa_rhel_major: "{{ haproxy_decision_rhel_major_version | default(ansible_distribution_major_version | string) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
-- name: Determine download details for {{ spoa_item.key }} SPOA
+- name: Merge release metadata for {{ spoa_item.key }} SPOA
   ansible.builtin.set_fact:
-    spoa_repo: "{{ spoa_release.get('repo', '') }}"
-    spoa_version: "{{ spoa_release.get('version', '') }}"
-    spoa_assets: "{{ spoa_release.get('assets', {}) }}"
-    spoa_checksums: "{{ spoa_release.get('checksums', {}) }}"
-    spoa_asset: "{{ spoa_release.get('assets', {}).get(spoa_rhel_major, '') }}"
-    spoa_checksum: "{{ spoa_release.get('checksums', {}).get(spoa_rhel_major) }}"
-    spoa_download_path: "{{ haproxy_decision_rhel_download_dir }}/{{ spoa_release.get('assets', {}).get(spoa_rhel_major, '') }}"
-    spoa_url_template: "{{ spoa_release.get('url_template', haproxy_decision_spoa_release_url_template) }}"
+    spoa_release_combined: "{{ spoa_release_defaults | combine(spoa_release_override, recursive=True) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
-- name: Determine install method for {{ spoa_item.key }} SPOA
+- name: Determine package URL candidates for {{ spoa_item.key }} SPOA
   ansible.builtin.set_fact:
-    spoa_use_release: "{{ (spoa_asset | default('') | string | length) > 0 }}"
+    spoa_package_url_candidates:
+      - "{{ spoa_release_combined.get('package_urls', {}).get(ansible_os_family) | default('', true) }}"
+      - "{{ spoa_release_combined.get('package_urls', {}).get('default') | default('', true) }}"
+      - "{{ spoa_release_combined.get('packages', {}).get(ansible_os_family, {}).get('url') | default('', true) }}"
+      - "{{ spoa_release_combined.get(ansible_os_family ~ '_package_url') | default('', true) }}"
+      - "{{ (spoa_release_combined.get('rh_package_url') | default('', true)) if ansible_os_family == 'RedHat' else '' }}"
+      - "{{ (spoa_release_combined.get('debian_package_url') | default('', true)) if ansible_os_family == 'Debian' else '' }}"
+      - "{{ spoa_release_combined.get('package_url') | default('', true) }}"
+      - "{{ spoa_release_combined.get('url') | default('', true) }}"
+      - "{{ (spoa_release_combined.get('rpm') | default('', true)) if ansible_os_family == 'RedHat' else (spoa_release_combined.get('deb') | default('', true)) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Normalise release configuration for {{ spoa_item.key }} SPOA
+  ansible.builtin.set_fact:
+    spoa_package_url: "{{ spoa_package_url_candidates | map('string') | map('trim') | reject('equalto','') | list | first | default('') }}"
+    spoa_use_checksum: "{{ spoa_release_combined.get('use_checksum', false) | bool }}"
+    spoa_checksums_url: "{{ spoa_release_combined.get('checksums_url', '') | string | trim }}"
+    spoa_checksums_map: "{{ spoa_release_combined.get('checksums', {}) }}"
+    spoa_url_template_base: "{{ spoa_release_combined.get('url_template', haproxy_decision_spoa_release_url_template) | string | trim }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Fallback to legacy release metadata for {{ spoa_item.key }} SPOA
+  when:
+    - spoa_package_url | length == 0
+    - (spoa_release_combined.get('repo', '') | string | trim | length) > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+  block:
+    - name: Determine legacy asset data for {{ spoa_item.key }} SPOA
+      ansible.builtin.set_fact:
+        spoa_repo_legacy: "{{ spoa_release_combined.get('repo') | string | trim }}"
+        spoa_version_legacy: "{{ spoa_release_combined.get('version', '') | string | trim }}"
+        spoa_assets_legacy: "{{ spoa_release_combined.get('assets', {}) }}"
+        spoa_checksums_map: "{{ spoa_release_combined.get('checksums', {}) }}"
+
+    - name: Select legacy asset for {{ spoa_item.key }} SPOA
+      ansible.builtin.set_fact:
+        spoa_asset_legacy: "{{ spoa_assets_legacy.get(spoa_rhel_major) if ansible_os_family == 'RedHat' else spoa_assets_legacy.get(ansible_os_family, spoa_assets_legacy.get('default', '')) }}"
+
+    - name: Compose legacy package URL for {{ spoa_item.key }} SPOA
+      ansible.builtin.set_fact:
+        spoa_package_url: "{{ spoa_url_template_base | replace('{repo}', spoa_repo_legacy) | replace('{version}', spoa_version_legacy) | replace('{asset}', spoa_asset_legacy | default('')) | trim }}"
+
+- name: Compute package filename for {{ spoa_item.key }} SPOA
+  ansible.builtin.set_fact:
+    spoa_package_filename: "{{ spoa_package_url | regex_replace('.*/', '') if spoa_package_url | length > 0 else '' }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Finalise release package metadata for {{ spoa_item.key }} SPOA
+  ansible.builtin.set_fact:
+    spoa_use_release: "{{ spoa_package_filename | length > 0 }}"
+    spoa_download_path: "{{ (haproxy_decision_rhel_download_dir ~ '/' ~ spoa_package_filename) | trim if spoa_package_filename | length > 0 else '' }}"
+    spoa_download_url: "{{ spoa_package_url }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Determine checksum mapping for {{ spoa_item.key }} SPOA
+  ansible.builtin.set_fact:
+    spoa_package_checksum: "{{ (
+        spoa_checksums_map.get(ansible_os_family)
+        or spoa_checksums_map.get(spoa_package_filename)
+        or spoa_checksums_map.get('default')
+        or ''
+      ) | string | trim }}"
+  when: spoa_use_release
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Fetch checksum manifest for {{ spoa_item.key }} SPOA
+  ansible.builtin.uri:
+    url: "{{ spoa_checksums_url }}"
+    return_content: true
+    status_code: 200
+  register: spoa_checksums_manifest
+  when:
+    - spoa_use_release
+    - spoa_use_checksum
+    - spoa_package_checksum | length == 0
+    - spoa_checksums_url | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Extract checksum from manifest for {{ spoa_item.key }} SPOA
+  ansible.builtin.set_fact:
+    spoa_package_checksum: "{{ spoa_checksums_manifest.content | default('') | regex_search('(?im)^(?P<sum>[a-fA-F0-9]{32,128})\\s+\\*?' ~ (spoa_package_filename | regex_escape) ~ '$', '\\g<sum>') | default(spoa_package_checksum) | string | trim }}"
+  when:
+    - spoa_use_release
+    - spoa_use_checksum
+    - spoa_package_checksum | length == 0
+    - spoa_checksums_manifest is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Validate release metadata for {{ spoa_item.key }} SPOA
+  ansible.builtin.assert:
+    that:
+      - spoa_package_url | length > 0
+      - spoa_package_filename | length > 0
+    fail_msg: >-
+      Missing release metadata for the {{ spoa_item.key }} SPOA.
+      Define haproxy_decision_spoa_releases.{{ spoa_item.key }} with the package URL for {{ ansible_os_family }}.
+  when: spoa_use_release
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Download release artifact for {{ spoa_item.key }} SPOA
+  ansible.builtin.get_url:
+    url: "{{ spoa_download_url }}"
+    dest: "{{ spoa_download_path }}"
+    mode: "0644"
+    checksum: "{{ spoa_package_checksum if spoa_package_checksum | length > 0 else omit }}"
+  register: haproxy_decision_spoa_download
+  retries: "{{ haproxy_decision_download_retries }}"
+  delay: "{{ haproxy_decision_download_delay }}"
+  until: haproxy_decision_spoa_download is succeeded
+  when: spoa_use_release
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Install {{ spoa_item.key }} SPOA from downloaded package (Debian)
+  ansible.builtin.apt:
+    deb: "{{ spoa_download_path }}"
+    state: "{{ haproxy_decision_spoa_package_state }}"
+  when:
+    - ansible_os_family == "Debian"
+    - spoa_use_release | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
+
+- name: Install {{ spoa_item.key }} SPOA from downloaded RPM
+  ansible.builtin.dnf:
+    name: "{{ spoa_download_path }}"
+    state: "{{ haproxy_decision_spoa_package_state }}"
+    disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
+  when:
+    - ansible_os_family == "RedHat"
+    - spoa_use_release | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
 - name: Determine package name for {{ spoa_item.key }} SPOA
   vars:
@@ -33,14 +200,10 @@
       {% else %}
       {{ spoa_package_source | default('') }}
       {% endif %}
-
-- name: Compose download URL for {{ spoa_item.key }} SPOA
-  ansible.builtin.set_fact:
-    spoa_download_url: >-
-      {{ spoa_url_template
-         | replace('{repo}', spoa_repo)
-         | replace('{version}', spoa_version)
-         | replace('{asset}', spoa_asset) }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
 - name: Install package for {{ spoa_item.key }} SPOA (Debian)
   ansible.builtin.package:
@@ -48,43 +211,12 @@
     state: "{{ haproxy_decision_spoa_package_state }}"
   when:
     - ansible_os_family == "Debian"
+    - not spoa_use_release | bool
     - spoa_package | default('') | string | length > 0
-
-- name: Validate release metadata for {{ spoa_item.key }} SPOA
-  ansible.builtin.assert:
-    that:
-      - spoa_repo | length > 0
-      - spoa_version | length > 0
-      - spoa_asset | length > 0
-    fail_msg: >-
-      Missing release metadata for the {{ spoa_item.key }} SPOA on EL{{ spoa_rhel_major }}.
-      Set the release information under haproxy_decision_spoas.{{ spoa_item.key }}.release.
-  when:
-    - ansible_os_family == "RedHat"
-    - (spoa_use_release | bool)
-
-- name: Download release artifact for {{ spoa_item.key }} SPOA
-  ansible.builtin.get_url:
-    url: "{{ spoa_download_url }}"
-    dest: "{{ spoa_download_path }}"
-    mode: "0644"
-    checksum: "{{ spoa_checksum | default(omit) }}"
-  register: haproxy_decision_spoa_download
-  retries: "{{ haproxy_decision_download_retries }}"
-  delay: "{{ haproxy_decision_download_delay }}"
-  until: haproxy_decision_spoa_download is succeeded
-  when:
-    - ansible_os_family == "RedHat"
-    - (spoa_use_release | bool)
-
-- name: Install {{ spoa_item.key }} SPOA from downloaded RPM
-  ansible.builtin.dnf:
-    name: "{{ spoa_download_path }}"
-    state: "{{ haproxy_decision_spoa_package_state }}"
-    disable_gpg_check: "{{ haproxy_decision_rhel_disable_gpg_check | bool }}"
-  when:
-    - ansible_os_family == "RedHat"
-    - (spoa_use_release | bool)
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
 - name: Install package for {{ spoa_item.key }} SPOA (RedHat)
   ansible.builtin.dnf:
@@ -92,8 +224,12 @@
     state: "{{ haproxy_decision_spoa_package_state }}"
   when:
     - ansible_os_family == "RedHat"
-    - not (spoa_use_release | bool)
+    - not spoa_use_release | bool
     - spoa_package | default('') | string | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-install
 
 - name: Deploy environment file for {{ spoa_item.key }} SPOA
   ansible.builtin.template:
@@ -107,6 +243,10 @@
     - haproxy_decision_manage_spoa_env | bool
     - spoa_item.value.env_template is defined
     - spoa_item.value.env_file is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
 
 - name: Deploy SPOA configuration for {{ spoa_item.key }}
   ansible.builtin.template:
@@ -120,3 +260,7 @@
     - haproxy_decision_manage_spoa_configs | bool
     - spoa_item.value.config_template is defined
     - spoa_item.value.config_path is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config

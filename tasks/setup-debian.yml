@@ -7,6 +7,10 @@
   when:
     - haproxy_decision_manage_repo | bool
     - haproxy_decision_debian_repo_prereq_packages | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
 - name: Configure HAProxy PPA
   ansible.builtin.apt_repository:
@@ -15,6 +19,10 @@
   when:
     - haproxy_decision_manage_repo | bool
     - haproxy_decision_ubuntu_repo | default("") | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
 - name: Configure additional APT repositories
   ansible.builtin.apt_repository:
@@ -27,9 +35,29 @@
   loop_control:
     label: "{{ (item.repo if (item is mapping) else item) }}"
   when: haproxy_decision_manage_repo | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
+
+- name: Ensure download directory exists for release assets
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_rhel_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform
 
 - name: Update APT cache if needed
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: "{{ haproxy_decision_apt_cache_valid_time | int }}"
   when: haproxy_decision_apt_update_cache | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-setup
+    - haproxy-decision-platform

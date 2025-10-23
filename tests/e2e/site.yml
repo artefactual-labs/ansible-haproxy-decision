@@ -6,6 +6,13 @@
     haproxy_decision_manage_repo: false
     haproxy_decision_coraza_spoa_relax_systemd: true
     haproxy_decision_rhel_disable_gpg_check: true
+    haproxy_decision_spoa_releases:
+      decision:
+        rh_package_url: https://github.com/artefactual-labs/decision-spoa/releases/download/v0.1.0/decision-spoa_0.1.0_amd64.rpm
+      coraza:
+        rh_package_url: https://github.com/artefactual-labs/coraza-spoa-crs-package/releases/download/v0.1.0/coraza-spoa-crs_0.1.0-1_amd64.rpm
+      cookie_guard:
+        rh_package_url: https://github.com/artefactual-labs/cookie-guard-spoa/releases/download/v0.1.0/cookie-guard-spoa_0.1.0_amd64.rpm
     haproxy_decision_selinux_port_labels:
       - { port: 80 }
       - { port: 443 }
@@ -73,11 +80,6 @@
               address: 127.0.0.1
               port: 9908
               options: "check"
-        release:
-          repo: artefactual-labs/decision-spoa
-          version: "v0.1.0"
-          assets:
-            "9": decision-spoa_0.1.0_amd64.rpm
       coraza:
         enabled: true
         service: coraza-spoa
@@ -96,11 +98,6 @@
               address: 127.0.0.1
               port: 9000
               options: "check"
-        release:
-          repo: artefactual-labs/coraza-spoa-crs-package
-          version: "v0.1.0"
-          assets:
-            "9": coraza-spoa-crs_0.1.0-1_amd64.rpm
       cookie_guard:
         enabled: true
         service: cookie-guard-spoa
@@ -123,11 +120,6 @@
               address: 127.0.0.1
               port: 9903
               options: "check"
-        release:
-          repo: artefactual-labs/cookie-guard-spoa
-          version: "v0.1.0"
-          assets:
-            "9": cookie-guard-spoa_0.1.0_amd64.rpm
 
   pre_tasks:
     - name: Allow nginx backend port in SELinux
@@ -193,6 +185,7 @@
         varnish_default_vcl_template_path: "{{ playbook_dir }}/templates/default.vcl.j2"
         varnish_default_backend_host: "127.0.0.1"
         varnish_default_backend_port: "9080"
+        varnish_modules_package_name: false
     - role: ansible-haproxy-decision
 
   post_tasks:

@@ -6,6 +6,9 @@
          | selectattr('value.enabled', 'defined')
          | selectattr('value.enabled', 'equalto', true)
          | list }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
 
 - name: Install and configure SPOA services
   ansible.builtin.include_tasks: spoa-item.yml
@@ -14,3 +17,6 @@
     label: "{{ item.key }}"
   vars:
     spoa_item: "{{ item }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa

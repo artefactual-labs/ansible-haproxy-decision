@@ -2,15 +2,19 @@
 haproxy_decision_manage_repo: true
 
 haproxy_decision_rhel_download_dir: /var/cache/ansible/haproxy-decision
-haproxy_decision_haproxy_release:
-  repo: artefactual-labs/haproxy-el-packaging
-  version: "2.8.16"
-  assets:
-    "8": haproxy-2.8.16-1.el8.x86_64.rpm
-    "9": haproxy-2.8.16-1.el9.x86_64.rpm
-  checksums: {}
+haproxy_decision_haproxy_repo: artefactual-labs/haproxy-el-packaging
+haproxy_decision_haproxy_version: "2.8.16"
+haproxy_decision_haproxy_release_number: "1"
+haproxy_decision_haproxy_rpm: ""
+haproxy_decision_haproxy_rpm_arch: x86_64
+haproxy_decision_haproxy_checksums: {}
 haproxy_decision_rhel_disable_gpg_check: false
 haproxy_decision_release_url_template: "https://github.com/{repo}/releases/download/{version}/{asset}"
+haproxy_decision_haproxy_url_template: "{{ haproxy_decision_release_url_template }}"
+haproxy_decision_spoa_releases:
+  decision: {}
+  coraza: {}
+  cookie_guard: {}
 
 haproxy_decision_apt_repos: []
 haproxy_decision_ubuntu_repo: "ppa:vbernat/haproxy-2.8"
@@ -121,11 +125,6 @@ haproxy_decision_spoas:
       - "--metrics-host-label"
     config_template: spoa/decision-spoa.cfg.j2
     config_path: "{{ haproxy_decision_spoe_configs_dir }}/decision-spoa.cfg"
-    release:
-      repo: artefactual-labs/decision-spoa
-      version: ""
-      assets: {}
-      checksums: {}
     backend:
       name: decision_spoa_backend
       balance: roundrobin
@@ -147,11 +146,6 @@ haproxy_decision_spoas:
       - "-config /etc/coraza-spoa/config.yaml"
     config_template: spoa/coraza-spoa.cfg.j2
     config_path: "{{ haproxy_decision_spoe_configs_dir }}/coraza-spoa.cfg"
-    release:
-      repo: artefactual-labs/coraza-spoa-crs-package
-      version: ""
-      assets: {}
-      checksums: {}
     backend:
       name: coraza_spoa_backend
       balance: roundrobin
@@ -177,11 +171,6 @@ haproxy_decision_spoas:
       - "-expected-len 168"
     config_template: spoa/cookie-guard-spoa.cfg.j2
     config_path: "{{ haproxy_decision_spoe_configs_dir }}/cookie-guard-spoa.cfg"
-    release:
-      repo: artefactual-labs/cookie-guard-spoa
-      version: ""
-      assets: {}
-      checksums: {}
     backend:
       name: cookie_guard_spoa_backend
       balance: roundrobin

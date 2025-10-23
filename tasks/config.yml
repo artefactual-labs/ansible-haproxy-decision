@@ -6,6 +6,10 @@
     owner: "{{ haproxy_decision_config_owner }}"
     group: "{{ haproxy_decision_config_group }}"
     mode: "0755"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-files
 
 - name: Ensure SPOE configuration directory exists
   ansible.builtin.file:
@@ -14,6 +18,10 @@
     owner: "{{ haproxy_decision_config_owner }}"
     group: "{{ haproxy_decision_config_group }}"
     mode: "0750"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-files
 
 - name: Ensure HAProxy runtime directory exists
   ansible.builtin.file:
@@ -22,6 +30,10 @@
     owner: "{{ haproxy_decision_runtime_dir_owner }}"
     group: "{{ haproxy_decision_runtime_dir_group }}"
     mode: "{{ haproxy_decision_runtime_dir_mode }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-files
 
 - name: Apply SELinux port labels for HAProxy
   community.general.seport:
@@ -35,6 +47,10 @@
   when:
     - haproxy_decision_selinux_port_labels | length > 0
     - ansible_selinux.status | default('disabled') == 'enabled'
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-selinux
 
 - name: Apply SELinux booleans for HAProxy
   ansible.posix.seboolean:
@@ -47,3 +63,7 @@
   when:
     - haproxy_decision_selinux_booleans | length > 0
     - ansible_selinux.status | default('disabled') == 'enabled'
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-selinux

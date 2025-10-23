@@ -1,6 +1,10 @@
 - name: Ensure HAProxy binary has CAP_NET_BIND_SERVICE
   become: true
   when: haproxy_decision_setcap_net_bind_service | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-haproxy
   block:
     - name: Check HAProxy binary capabilities
       ansible.builtin.command: "getcap {{ haproxy_decision_binary_path }}"
@@ -21,3 +25,7 @@
     mode: "{{ haproxy_decision_config_mode }}"
   when: haproxy_decision_manage_config | bool
   notify: reload haproxy
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-haproxy
