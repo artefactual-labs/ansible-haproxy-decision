@@ -235,6 +235,11 @@ immediately.
 
 Each SPOA definition accepts overrides that feed directly into the templates:
 
+- Set `service` for every enabled SPOA so the role can restart the unit after
+  config or policy changes. The defaults ship with the appropriate values
+  (`decision-spoa`, `coraza-spoa`, `cookie-guard-spoa`); keep them in your
+  overrides unless you rename the systemd units.
+
 - Adjust listener endpoints by modifying `backend.servers`.
 - Override runtime arguments through `env_opts`.
 - Inject extra HAProxy directives with `spoa.backend.extra_lines` or
