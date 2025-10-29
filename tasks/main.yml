@@ -28,6 +28,13 @@
     - haproxy-decision
     - haproxy-decision-config
 
+- name: Manage HAProxy certificates
+  ansible.builtin.include_tasks: certificates.yml
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
 - name: Configure optional SPOA services
   ansible.builtin.include_tasks: spoa.yml
   tags:

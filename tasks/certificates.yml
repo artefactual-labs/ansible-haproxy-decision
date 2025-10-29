@@ -1,0 +1,70 @@
+---
+- name: Ensure HAProxy certificate directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_certificate_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_certificate_owner }}"
+    group: "{{ haproxy_decision_certificate_group }}"
+    mode: "{{ haproxy_decision_certificate_dir_mode }}"
+  when: haproxy_decision_manage_certificates | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Reset Certbot hook tracking data
+  ansible.builtin.set_fact:
+    haproxy_decision_certbot_hook_entries: {}
+  when:
+    - haproxy_decision_manage_certificates | bool
+    - haproxy_decision_manage_certbot_hook | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Manage HAProxy certificates
+  ansible.builtin.include_tasks: certificate-item.yml
+  when:
+    - haproxy_decision_manage_certificates | bool
+    - haproxy_decision_certificates | length > 0
+  loop: "{{ haproxy_decision_certificates }}"
+  loop_control:
+    loop_var: haproxy_decision_certificate
+    label: >-
+      {{ haproxy_decision_certificate.name
+         | default(
+             (haproxy_decision_certificate.domains | default([''])) | first
+             | default(haproxy_decision_certificate.dest, true)
+           )
+      }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Install Certbot deploy hook for HAProxy
+  when:
+    - haproxy_decision_manage_certificates | bool
+    - haproxy_decision_manage_certbot_hook | bool
+    - (haproxy_decision_certbot_hook_entries | default({})) | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+  block:
+    - name: Ensure Certbot deploy hook directory exists
+      ansible.builtin.file:
+        path: "{{ haproxy_decision_certbot_hook_path | dirname }}"
+        state: directory
+        owner: "{{ haproxy_decision_certbot_hook_owner }}"
+        group: "{{ haproxy_decision_certbot_hook_group }}"
+        mode: "0750"
+
+    - name: Render Certbot deploy hook script
+      ansible.builtin.template:
+        src: certbot-deploy-hook.sh.j2
+        dest: "{{ haproxy_decision_certbot_hook_path }}"
+        owner: "{{ haproxy_decision_certbot_hook_owner }}"
+        group: "{{ haproxy_decision_certbot_hook_group }}"
+        mode: "{{ haproxy_decision_certbot_hook_mode }}"

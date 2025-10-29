@@ -50,6 +50,24 @@ haproxy_decision_runtime_dir_mode: "0750"
 haproxy_decision_binary_path: /usr/sbin/haproxy
 haproxy_decision_setcap_net_bind_service: true
 
+haproxy_decision_manage_certificates: false
+haproxy_decision_certificate_dir: "{{ haproxy_decision_config_dir }}/certs"
+haproxy_decision_certificate_dir_mode: "0750"
+haproxy_decision_certificate_owner: root
+haproxy_decision_certificate_group: haproxy
+haproxy_decision_certificate_mode: "0640"
+haproxy_decision_certificates: []
+haproxy_decision_certificate_bootstrap_enabled: true
+haproxy_decision_certificate_bootstrap_valid_days: 3
+haproxy_decision_certificate_bootstrap_key_type: rsa
+haproxy_decision_certificate_bootstrap_key_bits: 2048
+haproxy_decision_manage_certbot_hook: false
+haproxy_decision_certbot_hook_path: /etc/letsencrypt/renewal-hooks/deploy/haproxy-decision-certificates.sh
+haproxy_decision_certbot_hook_owner: root
+haproxy_decision_certbot_hook_group: root
+haproxy_decision_certbot_hook_mode: "0750"
+haproxy_decision_certbot_hook_reload_command: "systemctl reload {{ haproxy_decision_service_name }}"
+
 haproxy_decision_global_settings:
   - "log /dev/log local0"
   - "log /dev/log local1 notice"

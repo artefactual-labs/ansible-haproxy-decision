@@ -1,0 +1,323 @@
+---
+- name: Determine HAProxy certificate label
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_label: >-
+      {{
+        [
+          haproxy_decision_certificate.filename,
+          haproxy_decision_certificate.name,
+          (haproxy_decision_certificate.dest | default('', true) | basename),
+          ((haproxy_decision_certificate.domains | default([''])) | first),
+          'haproxy'
+        ]
+        | select('string')
+        | select('truthy')
+        | list
+        | first
+      }}
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Calculate HAProxy certificate basename
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_basename: "{{ haproxy_decision_cert_label | regex_replace('[^A-Za-z0-9_.-]', '_') }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Calculate HAProxy certificate defaults
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_dest_path: "{{ haproxy_decision_certificate.dest | default(haproxy_decision_certificate_dir ~ '/' ~ haproxy_decision_cert_basename ~ '.pem') }}"
+    haproxy_decision_cert_owner: "{{ haproxy_decision_certificate.owner | default(haproxy_decision_certificate_owner) }}"
+    haproxy_decision_cert_group: "{{ haproxy_decision_certificate.group | default(haproxy_decision_certificate_group) }}"
+    haproxy_decision_cert_mode: "{{ haproxy_decision_certificate.mode | default(haproxy_decision_certificate_mode) }}"
+    haproxy_decision_cert_bootstrap_enabled: "{{ haproxy_decision_certificate.bootstrap_self_signed | default(haproxy_decision_certificate_bootstrap_enabled) }}"
+    haproxy_decision_cert_bootstrap_valid_days: "{{ haproxy_decision_certificate.bootstrap_valid_days | default(haproxy_decision_certificate_bootstrap_valid_days) }}"
+    haproxy_decision_cert_bootstrap_key_type: "{{ haproxy_decision_certificate.bootstrap_key_type | default(haproxy_decision_certificate_bootstrap_key_type) }}"
+    haproxy_decision_cert_bootstrap_key_bits: "{{ haproxy_decision_certificate.bootstrap_key_bits | default(haproxy_decision_certificate_bootstrap_key_bits) }}"
+    haproxy_decision_cert_fullchain_path: "{{ haproxy_decision_certificate.fullchain_path | default(haproxy_decision_certificate.cert_path | default('', true)) }}"
+    haproxy_decision_cert_privkey_path: "{{ haproxy_decision_certificate.privkey_path | default(haproxy_decision_certificate.key_path | default('', true)) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Calculate HAProxy certificate source filenames
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_fullchain_filename: "{{ (haproxy_decision_cert_fullchain_path | basename) if (haproxy_decision_cert_fullchain_path | length > 0) else '' }}"
+    haproxy_decision_cert_privkey_filename: "{{ (haproxy_decision_cert_privkey_path | basename) if (haproxy_decision_cert_privkey_path | length > 0) else '' }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Determine HAProxy certificate common name
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_common_name: "{{ haproxy_decision_certificate.bootstrap_common_name | default((haproxy_decision_certificate.domains | default([''])) | first | default(haproxy_decision_cert_label)) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Determine HAProxy certificate bootstrap subject
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_bootstrap_subject: "{{ haproxy_decision_certificate.bootstrap_subject | default('/CN=' ~ haproxy_decision_cert_common_name) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Derive certificate lineage directory
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_lineage_dir: "{{ haproxy_decision_certificate.lineage_path }}"
+  when: haproxy_decision_certificate.lineage_path is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Derive certificate lineage directory from fullchain path
+  ansible.builtin.set_fact:
+    haproxy_decision_cert_lineage_dir: "{{ haproxy_decision_cert_fullchain_path | dirname }}"
+  when:
+    - haproxy_decision_cert_lineage_dir is not defined
+    - haproxy_decision_cert_fullchain_path | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Inspect existing HAProxy certificate bundle
+  ansible.builtin.stat:
+    path: "{{ haproxy_decision_cert_dest_path }}"
+  register: haproxy_decision_cert_dest_stat
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Inspect combined certificate source
+  ansible.builtin.stat:
+    path: "{{ haproxy_decision_certificate.combined_path }}"
+  register: haproxy_decision_cert_combined_stat
+  when: haproxy_decision_certificate.combined_path is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Inspect certificate chain source
+  ansible.builtin.stat:
+    path: "{{ haproxy_decision_cert_fullchain_path }}"
+  register: haproxy_decision_cert_fullchain_stat
+  when: haproxy_decision_cert_fullchain_path | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Inspect private key source
+  ansible.builtin.stat:
+    path: "{{ haproxy_decision_cert_privkey_path }}"
+  register: haproxy_decision_cert_privkey_stat
+  when: haproxy_decision_cert_privkey_path | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Track certificate mapping for Certbot deploy hook
+  ansible.builtin.set_fact:
+    haproxy_decision_certbot_hook_entries: >-
+      {{
+        (haproxy_decision_certbot_hook_entries | default({})) |
+        combine(
+          {
+            haproxy_decision_cert_lineage_dir: (
+              (haproxy_decision_certbot_hook_entries | default({})).get(haproxy_decision_cert_lineage_dir, [])
+              + [ {
+                    'dest': haproxy_decision_cert_dest_path,
+                    'owner': haproxy_decision_cert_owner,
+                    'group': haproxy_decision_cert_group,
+                    'mode': haproxy_decision_cert_mode,
+                    'fullchain': haproxy_decision_cert_fullchain_filename,
+                    'privkey': haproxy_decision_cert_privkey_filename
+                  } ]
+            )
+          },
+          recursive=True
+        )
+      }}
+  when:
+    - haproxy_decision_manage_certbot_hook | bool
+    - (haproxy_decision_cert_lineage_dir | default('', true)) | length > 0
+    - haproxy_decision_cert_fullchain_filename | length > 0
+    - haproxy_decision_cert_privkey_filename | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Detect availability of real certificate artifacts
+  ansible.builtin.set_fact:
+    haproxy_decision_real_cert_available: "{{ (
+      (haproxy_decision_certificate.combined_path is defined)
+      and (haproxy_decision_cert_combined_stat.stat.exists | default(false))
+    ) or (
+      (haproxy_decision_cert_fullchain_path | length > 0)
+      and (haproxy_decision_cert_privkey_path | length > 0)
+      and (haproxy_decision_cert_fullchain_stat.stat.exists | default(false))
+      and (haproxy_decision_cert_privkey_stat.stat.exists | default(false))
+    ) }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Install HAProxy certificate bundle from combined source
+  ansible.builtin.copy:
+    src: "{{ haproxy_decision_certificate.combined_path }}"
+    dest: "{{ haproxy_decision_cert_dest_path }}"
+    owner: "{{ haproxy_decision_cert_owner }}"
+    group: "{{ haproxy_decision_cert_group }}"
+    mode: "{{ haproxy_decision_cert_mode }}"
+    remote_src: true
+  when:
+    - haproxy_decision_certificate.combined_path is defined
+    - haproxy_decision_cert_combined_stat.stat.exists | default(false)
+  notify: reload haproxy
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Assemble HAProxy certificate bundle from separate files
+  no_log: true
+  when:
+    - haproxy_decision_certificate.combined_path is not defined
+    - haproxy_decision_cert_fullchain_path | length > 0
+    - haproxy_decision_cert_privkey_path | length > 0
+    - haproxy_decision_cert_fullchain_stat.stat.exists | default(false)
+    - haproxy_decision_cert_privkey_stat.stat.exists | default(false)
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+  block:
+    - name: Read certificate chain content
+      ansible.builtin.slurp:
+        src: "{{ haproxy_decision_cert_fullchain_path }}"
+      register: haproxy_decision_cert_fullchain_content
+
+    - name: Read certificate private key content
+      ansible.builtin.slurp:
+        src: "{{ haproxy_decision_cert_privkey_path }}"
+      register: haproxy_decision_cert_privkey_content
+
+    - name: Deploy assembled HAProxy certificate bundle
+      ansible.builtin.copy:
+        dest: "{{ haproxy_decision_cert_dest_path }}"
+        content: "{{ (haproxy_decision_cert_fullchain_content.content | b64decode | regex_replace('\n*$', ''))
+                      ~ '\n'
+                      ~ (haproxy_decision_cert_privkey_content.content | b64decode | regex_replace('^\n*', '')) }}"
+        owner: "{{ haproxy_decision_cert_owner }}"
+        group: "{{ haproxy_decision_cert_group }}"
+        mode: "{{ haproxy_decision_cert_mode }}"
+      notify: reload haproxy
+
+- name: Refresh HAProxy certificate bundle facts
+  ansible.builtin.stat:
+    path: "{{ haproxy_decision_cert_dest_path }}"
+  register: haproxy_decision_cert_dest_stat
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Generate bootstrap certificate for HAProxy
+  when:
+    - not haproxy_decision_real_cert_available
+    - haproxy_decision_cert_bootstrap_enabled | bool
+    - not haproxy_decision_cert_dest_stat.stat.exists | default(false)
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+  block:
+    - name: Ensure OpenSSL is present for bootstrap certificate generation
+      ansible.builtin.package:
+        name: openssl
+        state: present
+
+    - name: Create temporary directory for bootstrap certificate
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: haproxy-cert
+      register: haproxy_decision_cert_bootstrap_tmp
+
+    - name: Generate bootstrap self-signed certificate
+      ansible.builtin.command: >
+        openssl req -x509 -nodes
+        -newkey {{ haproxy_decision_cert_bootstrap_key_type }}:{{ haproxy_decision_cert_bootstrap_key_bits }}
+        -keyout {{ haproxy_decision_cert_bootstrap_tmp.path }}/privkey.pem
+        -out {{ haproxy_decision_cert_bootstrap_tmp.path }}/fullchain.pem
+        -days {{ haproxy_decision_cert_bootstrap_valid_days }}
+        -subj "{{ haproxy_decision_cert_bootstrap_subject }}"
+      args:
+        creates: "{{ haproxy_decision_cert_bootstrap_tmp.path }}/fullchain.pem"
+      no_log: true
+
+    - name: Install bootstrap certificate bundle
+      ansible.builtin.shell: |
+        set -euo pipefail
+        cat "{{ haproxy_decision_cert_bootstrap_tmp.path }}/fullchain.pem" "{{ haproxy_decision_cert_bootstrap_tmp.path }}/privkey.pem" > "{{ haproxy_decision_cert_dest_path }}"
+      args:
+        executable: /bin/bash
+      no_log: true
+      notify: reload haproxy
+
+    - name: Set permissions on bootstrap certificate bundle
+      ansible.builtin.file:
+        path: "{{ haproxy_decision_cert_dest_path }}"
+        owner: "{{ haproxy_decision_cert_owner }}"
+        group: "{{ haproxy_decision_cert_group }}"
+        mode: "{{ haproxy_decision_cert_mode }}"
+
+    - name: Remove temporary bootstrap directory
+      ansible.builtin.file:
+        path: "{{ haproxy_decision_cert_bootstrap_tmp.path }}"
+        state: absent
+      no_log: true
+
+- name: Warn about placeholder certificate bundle in use
+  ansible.builtin.debug:
+    msg: >-
+      Using existing HAProxy certificate bundle at {{ haproxy_decision_cert_dest_path }} because
+      referenced certificate files are not available yet.
+    verbosity: 0
+  when:
+    - not haproxy_decision_real_cert_available
+    - haproxy_decision_cert_dest_stat.stat.exists | default(false)
+    - haproxy_decision_cert_bootstrap_enabled | bool
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates
+
+- name: Abort when certificate artifacts are missing
+  ansible.builtin.fail:
+    msg: >-
+      Unable to build HAProxy certificate bundle at {{ haproxy_decision_cert_dest_path }}.
+      Provide either a combined_path or both fullchain_path and privkey_path (cert_path/key_path),
+      or enable bootstrap_self_signed for this certificate definition.
+  when:
+    - not haproxy_decision_real_cert_available
+    - not haproxy_decision_cert_bootstrap_enabled | bool
+    - not haproxy_decision_cert_dest_stat.stat.exists | default(false)
+  tags:
+    - haproxy-decision
+    - haproxy-decision-config
+    - haproxy-decision-certificates

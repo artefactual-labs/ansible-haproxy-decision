@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+lineage="${RENEWED_LINEAGE:-}"
+if [[ -z "$lineage" ]]; then
+  exit 0
+fi
+
+reload_needed=false
+handled=false
+
+case "$lineage" in
+{% for lineage, certs in haproxy_decision_certbot_hook_entries | default({}) | dictsort %}
+  "{{ lineage }}")
+    handled=true
+{%   for cert in certs %}
+    if [[ -r "$lineage/{{ cert.fullchain }}" && -r "$lineage/{{ cert.privkey }}" ]]; then
+      tmp_file="$(mktemp)"
+      cat "$lineage/{{ cert.fullchain }}" "$lineage/{{ cert.privkey }}" > "$tmp_file"
+      install -m {{ cert.mode }} -o {{ cert.owner }} -g {{ cert.group }} "$tmp_file" "{{ cert.dest }}"
+      rm -f "$tmp_file"
+      reload_needed=true
+    else
+      echo "haproxy-decision: missing sources for {{ cert.dest }}, skipping" >&2
+    fi
+{%   endfor %}
+    ;;
+{% endfor %}
+esac
+
+if [[ "$handled" != "true" ]]; then
+  exit 0
+fi
+
+if [[ "$reload_needed" == "true" ]]; then
+  if ! {{ haproxy_decision_certbot_hook_reload_command }}; then
+    echo "haproxy-decision: reload command '{{ haproxy_decision_certbot_hook_reload_command }}' failed" >&2
+    exit 1
+  fi
+fi

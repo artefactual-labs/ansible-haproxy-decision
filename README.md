@@ -60,6 +60,13 @@ required repositories configured.
 | `haproxy_decision_spoa_releases` | see defaults | Mapping keyed by SPOA name (`decision`, `coraza`, `cookie_guard`) that exposes per-OS package URLs (`rh_package_url`, `debian_package_url`, or `package_urls.*`) plus optional checksum settings (`use_checksum`, `checksums_url`, `checksums`). Override entries to point at your own builds. |
 | `haproxy_decision_haproxy_package` | `haproxy` | (Debian/Ubuntu) Package name used with `apt`. Override if you need a specific NEVRA. |
 | `haproxy_decision_manage_config` | `true` | When `true` the role renders `haproxy.cfg` from `templates/haproxy.cfg.j2`. |
+| `haproxy_decision_manage_certificates` | `false` | When `true` the role assembles HAProxy-ready PEM bundles under `haproxy_decision_certificate_dir`. |
+| `haproxy_decision_certificates` | `[]` | List of TLS certificate definitions pulling from Certbot or other sources; each entry can point at `fullchain` and `privkey` paths or a pre-built bundle. |
+| `haproxy_decision_certificate_bootstrap_enabled` | `true` | Controls whether the role generates a short-lived self-signed bundle when referenced certificate files are missing so HAProxy can start. |
+| `haproxy_decision_manage_certbot_hook` | `false` | Deploy a Certbot deploy-hook script that rebuilds managed PEM bundles and reloads HAProxy immediately after renewal. |
+| `haproxy_decision_certbot_hook_path` | `/etc/letsencrypt/renewal-hooks/deploy/haproxy-decision-certificates.sh` | Destination of the managed deploy-hook script. |
+| `haproxy_decision_certbot_hook_owner` / `_group` / `_mode` | see defaults | Ownership and permissions applied to the deploy-hook script. |
+| `haproxy_decision_certbot_hook_reload_command` | `systemctl reload haproxy` | Command executed by the hook after regenerating PEM bundles. |
 | `haproxy_decision_global_settings` / `haproxy_decision_defaults_settings` | see defaults | Lists of directives written to the `global` and `defaults` sections. |
 | `haproxy_decision_listeners`, `haproxy_decision_frontends`, `haproxy_decision_backends` | `[]` | Optional lists of sections appended to the generated configuration. |
 | `haproxy_decision_spoas` | see defaults | Dictionary describing each SPOA daemon. Set `enabled: true` to activate one, adjust service/backend data, and rely on `haproxy_decision_spoa_releases` for download metadata when installing from GitHub releases. |
