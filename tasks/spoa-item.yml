@@ -238,7 +238,7 @@
     owner: "{{ haproxy_decision_spoa_env_owner }}"
     group: "{{ haproxy_decision_spoa_env_group }}"
     mode: "{{ haproxy_decision_spoa_env_mode }}"
-  notify: "restart {{ spoa_item.value.service }}"
+  notify: "{{ ['restart ' ~ spoa_item.value.service] if spoa_item.value.service is defined else [] }}"
   when:
     - haproxy_decision_manage_spoa_env | bool
     - spoa_item.value.env_template is defined
@@ -266,6 +266,8 @@
     - haproxy-decision-config
 
 - name: Ensure decision policy directory exists
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
   ansible.builtin.file:
     path: "{{ haproxy_decision_decision_policy_dir }}"
     state: directory
@@ -275,23 +277,26 @@
   when:
     - haproxy_decision_manage_decision_policy | bool
     - spoa_item.key == 'decision'
+  notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
   tags:
     - haproxy-decision
     - haproxy-decision-spoa
     - haproxy-decision-config
 
 - name: Render decision policy configuration
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
   ansible.builtin.template:
     src: spoa/decision-policy.yml.j2
     dest: "{{ haproxy_decision_decision_policy_dir }}/{{ haproxy_decision_decision_policy_file }}"
     owner: "{{ haproxy_decision_decision_policy_owner }}"
     group: "{{ haproxy_decision_decision_policy_group }}"
     mode: "{{ haproxy_decision_decision_policy_file_mode }}"
-  notify: "restart {{ spoa_item.value.service }}"
   when:
     - haproxy_decision_manage_decision_policy | bool
     - spoa_item.key == 'decision'
     - haproxy_decision_decision_policy is defined
+  notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
   tags:
     - haproxy-decision
     - haproxy-decision-spoa
