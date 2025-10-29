@@ -4,8 +4,8 @@
     haproxy_decision_cert_label: >-
       {{
         [
-          haproxy_decision_certificate.filename,
-          haproxy_decision_certificate.name,
+          haproxy_decision_certificate.get('filename'),
+          haproxy_decision_certificate.get('name'),
           (haproxy_decision_certificate.dest | default('', true) | basename),
           ((haproxy_decision_certificate.domains | default([''])) | first),
           'haproxy'
