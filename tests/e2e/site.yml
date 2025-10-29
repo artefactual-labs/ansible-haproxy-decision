@@ -6,6 +6,19 @@
     haproxy_decision_manage_repo: false
     haproxy_decision_coraza_spoa_relax_systemd: true
     haproxy_decision_rhel_disable_gpg_check: true
+    haproxy_decision_manage_decision_policy: true
+    haproxy_decision_decision_policy:
+      defaults:
+        global:
+          use_varnish: true
+          use_coraza: true
+          use_challenge: true
+      rules:
+        - name: skip-varnish-canada
+          match:
+            country: [CA]
+          return:
+            use_varnish: false
     haproxy_decision_spoa_releases:
       decision:
         rh_package_url: https://github.com/artefactual-labs/decision-spoa/releases/download/v0.1.0/decision-spoa_0.1.0_amd64.rpm
@@ -226,6 +239,13 @@
         name: varnish
         state: started
         enabled: true
+
+    - name: Validate decision policy syntax
+      ansible.builtin.command:
+        cmd: decision-configcheck --root {{ haproxy_decision_decision_policy_dir }} {{ haproxy_decision_decision_policy_dir }}/{{ haproxy_decision_decision_policy_file }}
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin') }}"
+      changed_when: false
 
   handlers:
     - name: restart nginx

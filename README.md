@@ -69,6 +69,8 @@ required repositories configured.
 | `haproxy_decision_certbot_hook_reload_command` | `systemctl reload haproxy` | Command executed by the hook after regenerating PEM bundles. |
 | `haproxy_decision_global_settings` / `haproxy_decision_defaults_settings` | see defaults | Lists of directives written to the `global` and `defaults` sections. |
 | `haproxy_decision_listeners`, `haproxy_decision_frontends`, `haproxy_decision_backends` | `[]` | Optional lists of sections appended to the generated configuration. |
+| `haproxy_decision_manage_decision_policy` | `false` | When `true` and the `decision` SPOA is enabled, the role creates `/etc/decision-policy` (override with `haproxy_decision_decision_policy_dir`) and renders a managed `policy.yml`. |
+| `haproxy_decision_decision_policy` | `{}` | Mapping rendered into the policy file via `to_nice_yaml`. Mirror the structure described in the decision-spoa documentation. |
 | `haproxy_decision_spoas` | see defaults | Dictionary describing each SPOA daemon. Set `enabled: true` to activate one, adjust service/backend data, and rely on `haproxy_decision_spoa_releases` for download metadata when installing from GitHub releases. |
 | `haproxy_decision_manage_spoa_configs` | `true` | Controls whether the role writes SPOE configuration snippets. |
 | `haproxy_decision_manage_spoa_env` | `true` | Controls whether `/etc/default/*` files are managed for SPOAs. |
@@ -133,6 +135,102 @@ Each `listener`, `frontend`, and `backend` entry can optionally supply a single
 rendered with Ansible’s template lookup and appended after the static `lines`,
 which lets you reuse complex fragments while keeping simple cases inline.
 
+## Certificate management
+
+Enable `haproxy_decision_manage_certificates` to have the role assemble the `.pem`
+bundles that HAProxy expects under `haproxy_decision_certificate_dir`. Certificates
+can come from Certbot or any other CA—point each entry at either a combined PEM or
+the separate `fullchain` and `privkey` files exposed on the target host:
+
+```yaml
+haproxy_decision_manage_certificates: true
+haproxy_decision_certificates:
+  - name: apps
+    domains:
+      - apps.example.org
+    fullchain_path: /etc/letsencrypt/live/apps.example.org/fullchain.pem
+    privkey_path: /etc/letsencrypt/live/apps.example.org/privkey.pem
+```
+
+When the referenced files are missing (for example, before Certbot provisions a
+fresh certificate), the role drops a short-lived self-signed bundle so HAProxy can
+start and continue proxying ACME HTTP-01 traffic. Tune this bootstrap behaviour
+with `haproxy_decision_certificate_bootstrap_enabled`, `*_valid_days`, and the
+other `haproxy_decision_certificate_bootstrap_*` variables.
+
+Set `haproxy_decision_manage_certbot_hook: true` to have the role install a
+Certbot deploy hook that rebuilds any managed PEM bundles sourced from
+`/etc/letsencrypt/live/<domain>/` and then executes
+`haproxy_decision_certbot_hook_reload_command` (defaults to reloading the
+HAProxy service). This keeps certificates fresh immediately after every renewal
+without waiting for the next configuration run.
+
+### Using the role with Certbot
+
+The [geerlingguy.certbot](https://github.com/geerlingguy/ansible-role-certbot)
+role stores issued material under `/etc/letsencrypt/live/<domain>/` and lets you
+describe each request via `certbot_certs`. To keep HAProxy running while
+performing HTTP-01 challenges, configure a dedicated backend that proxies ACME
+requests to Certbot’s standalone listener on `127.0.0.1:8009`:
+
+```yaml
+- hosts: loadbalancers
+  become: true
+  vars:
+    haproxy_decision_manage_certificates: true
+    haproxy_decision_certificates:
+      - name: apps
+        domains: ["apps.example.org"]
+        fullchain_path: /etc/letsencrypt/live/apps.example.org/fullchain.pem
+        privkey_path: /etc/letsencrypt/live/apps.example.org/privkey.pem
+    haproxy_decision_frontends:
+      - name: public_http
+        lines:
+          - "bind *:80"
+          - "mode http"
+          - "acl is_certbot path_beg -i /.well-known/acme-challenge"
+          - "use_backend certbot if is_certbot"
+          - "http-request redirect scheme https unless { ssl_fc } || is_certbot"
+          - "default_backend app_servers"
+    haproxy_decision_backends:
+      - name: certbot
+        lines:
+          - "mode http"
+          - "server certbot_local 127.0.0.1:8009"
+      - name: app_servers
+        lines:
+          - "mode http"
+          - "server app1 10.0.0.10:8080 check"
+    certbot_certs:
+      - domains: ["apps.example.org"]
+    certbot_create_method: standalone
+    certbot_create_standalone_stop_services: []
+    certbot_create_command: >-
+      {{ certbot_script }} certonly --{{ certbot_create_method }}
+      {{ '--test-cert' if certbot_testmode else '' }}
+      --noninteractive --agree-tos
+      --email {{ cert_item.email | default(certbot_admin_email) }}
+      --http-01-port 8009
+      -d {{ cert_item.domains | join(',') }}
+  roles:
+    - role: artefactual.ansible-haproxy-decision
+    - role: geerlingguy.certbot
+  tasks:
+    - name: Refresh HAProxy certificate bundles after Certbot runs
+      ansible.builtin.import_role:
+        name: artefactual.ansible-haproxy-decision
+        tasks_from: certificates.yml
+```
+
+The first role run installs HAProxy and, if necessary, seeds it with a bootstrap
+certificate. Certbot (proxied through HAProxy on `/.well-known/acme-challenge`)
+then retrieves trusted material, and the final task rebuilds the HAProxy bundles
+from Certbot’s live files—which triggers a graceful reload through the built-in
+handler whenever the certificate changes. On future renewals you can rerun just
+the certificate logic with `ansible-playbook … --tags haproxy-decision-certificates`
+or invoke it from a Certbot deploy hook so HAProxy picks up the new bundle
+immediately.
+
 ## SPOA customisation
 
 Each SPOA definition accepts overrides that feed directly into the templates:
@@ -145,6 +243,9 @@ Each SPOA definition accepts overrides that feed directly into the templates:
   you need to source binaries from somewhere other than the defaults.
 - Supply additional messages or groups for the Cookie Guard SPOA using the
   `messages` or `group_definitions` structures.
+- Manage the Decision policy tree by setting `haproxy_decision_manage_decision_policy: true`
+  and filling `haproxy_decision_decision_policy` with a mapping that matches
+  the YAML schema documented upstream.
 
 Example release override:
 
@@ -159,9 +260,10 @@ haproxy_decision_spoa_releases:
 
 Legacy overrides that supply `haproxy_decision_spoas.<name>.release.assets`
 still work, but migrating to the central `haproxy_decision_spoa_releases`
-structure keeps package metadata in a single place.
-```
-
+structure keeps package metadata in a single place. Consult the upstream
+[`decision-spoa` README](https://github.com/artefactual-labs/decision-spoa#policy-configuration)
+for the canonical policy layout and examples; mirror that structure when
+populating `haproxy_decision_decision_policy`.
 If a more drastic change is required, point `config_template` or `env_template`
 to a custom template shipped alongside your playbook.
 

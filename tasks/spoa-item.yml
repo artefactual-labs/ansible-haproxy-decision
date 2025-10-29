@@ -264,3 +264,35 @@
     - haproxy-decision
     - haproxy-decision-spoa
     - haproxy-decision-config
+
+- name: Ensure decision policy directory exists
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_decision_policy_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_decision_policy_owner }}"
+    group: "{{ haproxy_decision_decision_policy_group }}"
+    mode: "{{ haproxy_decision_decision_policy_dir_mode }}"
+  when:
+    - haproxy_decision_manage_decision_policy | bool
+    - spoa_item.key == 'decision'
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Render decision policy configuration
+  ansible.builtin.template:
+    src: spoa/decision-policy.yml.j2
+    dest: "{{ haproxy_decision_decision_policy_dir }}/{{ haproxy_decision_decision_policy_file }}"
+    owner: "{{ haproxy_decision_decision_policy_owner }}"
+    group: "{{ haproxy_decision_decision_policy_group }}"
+    mode: "{{ haproxy_decision_decision_policy_file_mode }}"
+  notify: "restart {{ spoa_item.value.service }}"
+  when:
+    - haproxy_decision_manage_decision_policy | bool
+    - spoa_item.key == 'decision'
+    - haproxy_decision_decision_policy is defined
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config

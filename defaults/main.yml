@@ -120,6 +120,15 @@ haproxy_decision_download_delay: 10
 
 haproxy_decision_coraza_spoa_relax_systemd: false
 
+haproxy_decision_manage_decision_policy: false
+haproxy_decision_decision_policy_dir: /etc/decision-policy
+haproxy_decision_decision_policy_dir_mode: "0750"
+haproxy_decision_decision_policy_file_mode: "0640"
+haproxy_decision_decision_policy_owner: haproxy
+haproxy_decision_decision_policy_group: haproxy
+haproxy_decision_decision_policy_file: policy.yml
+haproxy_decision_decision_policy: {}
+
 haproxy_decision_spoas:
   decision:
     enabled: false
