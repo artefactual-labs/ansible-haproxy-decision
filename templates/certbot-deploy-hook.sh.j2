@@ -16,7 +16,11 @@ case "$lineage" in
 {%   for cert in certs %}
     if [[ -r "$lineage/{{ cert.fullchain }}" && -r "$lineage/{{ cert.privkey }}" ]]; then
       tmp_file="$(mktemp)"
-      cat "$lineage/{{ cert.fullchain }}" "$lineage/{{ cert.privkey }}" > "$tmp_file"
+      cat "$lineage/{{ cert.fullchain }}" > "$tmp_file"
+      if [[ -s "$tmp_file" ]] && [[ $(tail -c1 "$tmp_file") != $'\n' ]]; then
+        printf '\n' >> "$tmp_file"
+      fi
+      cat "$lineage/{{ cert.privkey }}" >> "$tmp_file"
       install -m {{ cert.mode }} -o {{ cert.owner }} -g {{ cert.group }} "$tmp_file" "{{ cert.dest }}"
       rm -f "$tmp_file"
       reload_needed=true
