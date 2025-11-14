@@ -71,10 +71,21 @@ required repositories configured.
 | `haproxy_decision_listeners`, `haproxy_decision_frontends`, `haproxy_decision_backends` | `[]` | Optional lists of sections appended to the generated configuration. |
 | `haproxy_decision_manage_decision_policy` | `false` | When `true` and the `decision` SPOA is enabled, the role creates `/etc/decision-policy` (override with `haproxy_decision_decision_policy_dir`) and renders a managed `policy.yml`. |
 | `haproxy_decision_decision_policy` | `{}` | Mapping rendered into the policy file via `to_nice_yaml`. Mirror the structure described in the decision-spoa documentation. |
+| `haproxy_decision_manage_decision_context` | `false` | Controls whether the optional `context.yml` is rendered (co-located with `policy.yml`). Set alongside `haproxy_decision_decision_context`. |
+| `haproxy_decision_decision_context` | `{}` | Dictionary rendered to `context.yml` to drive Decision’s trusted-session tagging. Mirrors the structure described in the upstream README. |
+| `haproxy_decision_manage_decision_secret` | `false` | Creates `{{ haproxy_decision_decision_secret_dir }}` and manages the HMAC secret referenced by `context.yml` (default `secrets/edge_hmac.key`). Provide either `_secret_src` (role file) or `_secret_content`. |
+| `haproxy_decision_decision_secret_generate` | `true` | When no `_secret_src`/`_secret_content` is supplied, generate a random base64 secret (length controlled by `_secret_generate_bytes`) the first time the role runs. |
+| `haproxy_decision_decision_configcheck_enabled` | `true` | Runs `decision-configcheck` (default `/usr/local/bin/decision-configcheck -root {{ haproxy_decision_decision_policy_dir }}`) after updating policy/context files to catch syntax errors early. Override `_configcheck_bin`/`_configcheck_args` to customize the command or disable by setting this to `false`. |
 | `haproxy_decision_spoas` | see defaults | Dictionary describing each SPOA daemon. Set `enabled: true` to activate one, adjust service/backend data, and rely on `haproxy_decision_spoa_releases` for download metadata when installing from GitHub releases. |
 | `haproxy_decision_manage_spoa_configs` | `true` | Controls whether the role writes SPOE configuration snippets. |
 | `haproxy_decision_manage_spoa_env` | `true` | Controls whether `/etc/default/*` files are managed for SPOAs. |
 | `haproxy_decision_manage_spoa_services` | `true` | Enable or disable service/timer management for SPOAs. |
+| `haproxy_decision_cookie_guard_altcha_page_template` | `""` | Optional template rendered to `/altcha` (set to a role path such as `files/altcha_challenge.html.lf.j2` when you need to override the package-provided file). Leave blank to keep the file managed by the cookie-guard-spoa package. |
+| `haproxy_decision_cookie_guard_altcha_page_dest` | `{{ haproxy_decision_config_dir }}/altcha_challenge.html.lf` | Location of the challenge page when you opt-in to managing it via the role. |
+| `haproxy_decision_cookie_guard_manage_altcha_assets` | `false` | When true, the role stages `altcha.min.js` under `{{ haproxy_decision_cookie_guard_altcha_assets_dir }}/<version>/`, writes a `VERSION` file, and refreshes the `active` symlink. Leave `false` to rely on the cookie-guard-spoa package installing/updating the assets. |
+| `haproxy_decision_cookie_guard_altcha_page_owner` / `_group` / `_mode` | see defaults | Ownership and permissions applied to the managed ALTCHA HTML page. |
+| `haproxy_decision_cookie_guard_altcha_assets_dir` / `_version` / `_asset_src` | see defaults | Controls where ALTCHA JS assets are installed and the label/source to copy when `manage_altcha_assets` is enabled. Keep `_asset_src` empty when relying on packages. |
+| `haproxy_decision_cookie_guard_altcha_assets_owner` / `_group` / `_mode` | see defaults | Ownership and permissions enforced on the ALTCHA asset tree plus `VERSION`. |
 | `haproxy_decision_coraza_spoa_relax_systemd` | `false` | When `true` the role installs a systemd drop-in that removes the `BindReadOnlyPaths=-/etc/ld.so.cache` restriction from the `coraza-spoa` service. |
 | `haproxy_decision_release_url_template` | `https://github.com/{repo}/releases/download/{version}/{asset}` | Base template used to compose download URLs for GitHub releases. |
 | `haproxy_decision_haproxy_url_template` | `haproxy_decision_release_url_template` | Template applied to HAProxy downloads. Package entries may override it per release. |
@@ -134,6 +145,90 @@ Each `listener`, `frontend`, and `backend` entry can optionally supply a single
 `template` (with `template_vars`) or a `templates` list. These snippets are
 rendered with Ansible’s template lookup and appended after the static `lines`,
 which lets you reuse complex fragments while keeping simple cases inline.
+
+## Cookie-guard ALTCHA flow
+
+Enabling `haproxy_decision_spoas.cookie_guard.enabled` now deploys everything
+required to run the built-in ALTCHA challenge provided by
+[`cookie-guard-spoa`](https://github.com/artefactual-labs/cookie-guard-spoa):
+
+- The cookie-guard-spoa package already installs `/etc/haproxy/altcha_challenge.html.lf`
+  plus the ALTCHA assets under `/etc/haproxy/assets/altcha/`. The role leaves
+  these files untouched by default. Provide
+  `haproxy_decision_cookie_guard_altcha_page_template` or set
+  `haproxy_decision_cookie_guard_manage_altcha_assets: true` only when you need
+  to override them (for example, to ship a custom HTML page or bundle a specific
+  JS release under version control).
+- Default CLI flags include `-cookie-secure`, `-altcha-assets`, and
+  `-altcha-page` so the agent knows where to find these files.
+- The managed SPOE template now emits both the TCP backend that HAProxy uses for
+  SPOE frames and an HTTP backend (`cookie_guard_http_backend` by default) that
+  points to the agent’s metrics port.
+
+Expose the endpoints by adding a simple ACL to any frontend that should serve
+ALTCHA traffic:
+
+```
+acl altcha_routes path_beg -i /altcha /altcha- /assets/altcha/
+use_backend cookie_guard_http_backend if altcha_routes
+```
+
+When HAProxy decides a client needs a challenge (for example, when
+`var(txn.cookieguard.valid) -m str 1` fails), redirect them to `/altcha` and
+preserve the original path so the page can return once the hb_v2 cookie is set:
+
+```
+http-request redirect code 302 location /altcha?url=%[req.uri] if chal_target !cookie_ok
+```
+
+You can override any of the `_altcha_*` variables to bring your own HTML, take
+over asset management, or point the generated HTTP backend at a different
+listener. Adjust `haproxy_decision_spoas.cookie_guard.http_backend` if you
+prefer a different backend name or need to disable the section entirely. Keep
+`haproxy_decision_cookie_guard_manage_altcha_assets: false` (default) when the
+cookie-guard-spoa package provides `/etc/haproxy/assets/altcha` for you.
+
+## Decision context + secrets
+
+When running `decision-spoa` you often need to ship a policy bundle that now
+consists of:
+
+```
+/etc/decision-policy /
+  policy.yml          # request rules
+  context.yml         # response allowlist and trusted-session tags
+  secrets/
+    edge_hmac.key     # HMAC secret referenced by context.yml
+```
+
+Enable `haproxy_decision_manage_decision_policy` to create the base directory
+and render `policy.yml`. To manage the other files:
+
+- `haproxy_decision_manage_decision_context: true` renders
+  `{{ haproxy_decision_decision_context_path }}` from the
+  `haproxy_decision_decision_context` mapping via
+  `templates/spoa/context.yml.j2`. Match the schema in the upstream
+  [Trusted context](https://github.com/artefactual-labs/decision-spoa#trusted-context-contextyml)
+  section (response allowlist + tags, hashing mode, secret path).
+- `haproxy_decision_manage_decision_secret: true` ensures
+  `{{ haproxy_decision_decision_secret_dir }}` exists and writes the secret to
+  `{{ haproxy_decision_decision_secret_path }}`. Provide either
+  `haproxy_decision_decision_secret_src` (path relative to this role’s `files/`
+  directory or the Ansible control machine) or
+  `haproxy_decision_decision_secret_content` (inline string). Leave both empty to
+  let the role generate a base64 secret once (length controlled by
+  `haproxy_decision_decision_secret_generate_bytes`). The task runs with `no_log`
+  enabled by default.
+- Set `haproxy_decision_decision_configcheck_enabled: true` (default) to invoke
+  `decision-configcheck` after rendering the files. This mirrors running
+  `decision-configcheck -root /etc/decision-policy` manually and fails fast when
+  either YAML file is invalid.
+
+All three tasks notify the `decision-spoa` service so changes take effect
+immediately (or at the next handler run, depending on your play). When the
+secret path is relative (default `secrets/edge_hmac.key`) the role keeps it under
+`haproxy_decision_decision_policy_dir`, mirroring the layout described in the
+Decision README.
 
 ## Certificate management
 

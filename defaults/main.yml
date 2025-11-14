@@ -97,6 +97,20 @@ haproxy_decision_backends: []
 haproxy_decision_spoe_configs_dir: "{{ haproxy_decision_config_dir }}/spoe.d"
 haproxy_decision_spoe_include_glob: "{{ haproxy_decision_spoe_configs_dir }}/*.cfg"
 haproxy_decision_spoe_include_configs: false
+haproxy_decision_cookie_guard_altcha_page_template: ""
+haproxy_decision_cookie_guard_altcha_page_dest: "{{ haproxy_decision_config_dir }}/altcha_challenge.html.lf"
+haproxy_decision_cookie_guard_altcha_page_owner: "{{ haproxy_decision_config_owner }}"
+haproxy_decision_cookie_guard_altcha_page_group: "{{ haproxy_decision_config_group }}"
+haproxy_decision_cookie_guard_altcha_page_mode: "0640"
+haproxy_decision_cookie_guard_manage_altcha_assets: false
+haproxy_decision_cookie_guard_altcha_assets_dir: "{{ haproxy_decision_config_dir }}/assets/altcha"
+haproxy_decision_cookie_guard_altcha_assets_dir_mode: "0755"
+haproxy_decision_cookie_guard_altcha_assets_version: ""
+haproxy_decision_cookie_guard_altcha_asset_src: ""
+haproxy_decision_cookie_guard_altcha_assets_owner: "{{ haproxy_decision_config_owner }}"
+haproxy_decision_cookie_guard_altcha_assets_group: "{{ haproxy_decision_config_group }}"
+haproxy_decision_cookie_guard_altcha_assets_mode: "0644"
+haproxy_decision_cookie_guard_altcha_active_symlink: "active"
 haproxy_decision_spoa_config_owner: root
 haproxy_decision_spoa_config_group: haproxy
 haproxy_decision_spoa_config_mode: "0640"
@@ -127,7 +141,39 @@ haproxy_decision_decision_policy_file_mode: "0640"
 haproxy_decision_decision_policy_owner: haproxy
 haproxy_decision_decision_policy_group: haproxy
 haproxy_decision_decision_policy_file: policy.yml
+haproxy_decision_decision_policy_path: >-
+  {{ haproxy_decision_decision_policy_file
+     if (haproxy_decision_decision_policy_file | string).startswith('/')
+     else haproxy_decision_decision_policy_dir ~ '/' ~ haproxy_decision_decision_policy_file }}
 haproxy_decision_decision_policy: {}
+haproxy_decision_manage_decision_context: false
+haproxy_decision_decision_context_file: context.yml
+haproxy_decision_decision_context_path: >-
+  {{ haproxy_decision_decision_context_file
+     if (haproxy_decision_decision_context_file | string).startswith('/')
+     else haproxy_decision_decision_policy_dir ~ '/' ~ haproxy_decision_decision_context_file }}
+haproxy_decision_decision_context: {}
+haproxy_decision_manage_decision_secret: false
+haproxy_decision_decision_secret_dir: "{{ haproxy_decision_decision_policy_dir }}/secrets"
+haproxy_decision_decision_secret_dir_mode: "0750"
+haproxy_decision_decision_secret_file: edge_hmac.key
+haproxy_decision_decision_secret_path: >-
+  {{ haproxy_decision_decision_secret_file
+     if (haproxy_decision_decision_secret_file | string).startswith('/')
+     else haproxy_decision_decision_secret_dir ~ '/' ~ haproxy_decision_decision_secret_file }}
+haproxy_decision_decision_secret_owner: "{{ haproxy_decision_decision_policy_owner }}"
+haproxy_decision_decision_secret_group: "{{ haproxy_decision_decision_policy_group }}"
+haproxy_decision_decision_secret_mode: "0640"
+haproxy_decision_decision_secret_content: ""
+haproxy_decision_decision_secret_src: ""
+haproxy_decision_decision_secret_no_log: true
+haproxy_decision_decision_secret_generate: true
+haproxy_decision_decision_secret_generate_bytes: 48
+haproxy_decision_decision_configcheck_enabled: true
+haproxy_decision_decision_configcheck_bin: /usr/local/bin/decision-configcheck
+haproxy_decision_decision_configcheck_args:
+  - "-root"
+  - "{{ haproxy_decision_decision_policy_dir }}"
 
 haproxy_decision_spoas:
   decision:
@@ -195,7 +241,11 @@ haproxy_decision_spoas:
       - "-metrics 127.0.0.1:9904"
       - "-secret /etc/cookie-guard-spoa/secret.key"
       - "-ttl 1h"
-      - "-expected-len 168"
+      - "-skew 30s"
+      - "-altcha-assets {{ haproxy_decision_cookie_guard_altcha_assets_dir }}"
+      - "-altcha-page {{ haproxy_decision_cookie_guard_altcha_page_dest }}"
+      - "-altcha-expires 2m"
+      - "-cookie-secure"
     config_template: spoa/cookie-guard-spoa.cfg.j2
     config_path: "{{ haproxy_decision_spoe_configs_dir }}/cookie-guard-spoa.cfg"
     backend:
@@ -206,4 +256,17 @@ haproxy_decision_spoas:
         - name: cookie_guard_spoa
           address: 127.0.0.1
           port: 9903
+          options: "check"
+    http_backend:
+      enabled: true
+      name: cookie_guard_http_backend
+      mode: http
+      lines:
+        - "option forwarded"
+        - "option forwardfor"
+        - "http-request set-header X-Forwarded-For %[src]"
+      servers:
+        - name: cookie_guard_http
+          address: 127.0.0.1
+          port: 9904
           options: "check"

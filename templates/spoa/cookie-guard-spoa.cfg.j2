@@ -14,8 +14,8 @@ spoe-agent {{ spoa.agent_name | default('cookie-guard') }}
     log global
 
 {% set default_messages = [
-  {'name': 'issue-token', 'args': 'src-ip=src ua=req.hdr(User-Agent),lower'},
-  {'name': 'verify-token', 'args': 'src-ip=src ua=req.hdr(User-Agent),lower cookie=req.cook(hb_v2)'}
+  {'name': 'issue-token', 'args': 'src-ip=src ua="req.fhdr(User-Agent)"'},
+  {'name': 'verify-token', 'args': 'src-ip=src ua="req.fhdr(User-Agent)" cookie=req.cook(hb_v2)'}
 ] %}
 {% for message in spoa.messages | default(default_messages) %}
 spoe-message {{ message.name }}
@@ -47,3 +47,19 @@ backend {{ spoa.backend.name }}
 {% for line in spoa.backend.extra_lines | default([]) %}
     {{ line }}
 {% endfor %}
+{% set http_backend = spoa.http_backend | default({}) %}
+{% if http_backend %}
+{%   if http_backend.get('enabled', True) %}
+
+backend {{ http_backend.name }}
+{%     if http_backend.mode is defined %}
+    mode {{ http_backend.mode }}
+{%     endif %}
+{%     for line in http_backend.lines | default([]) %}
+    {{ line }}
+{%     endfor %}
+{%     for server in http_backend.servers | default([]) %}
+    server {{ server.name }} {{ server.address }}:{{ server.port }}{% if server.options is defined and server.options | length > 0 %} {{ server.options }}{% endif %}
+{%     endfor %}
+{%   endif %}
+{% endif %}

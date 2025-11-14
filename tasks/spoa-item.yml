@@ -265,6 +265,73 @@
     - haproxy-decision-spoa
     - haproxy-decision-config
 
+- name: Deploy cookie-guard ALTCHA challenge page
+  ansible.builtin.template:
+    src: "{{ haproxy_decision_cookie_guard_altcha_page_template }}"
+    dest: "{{ haproxy_decision_cookie_guard_altcha_page_dest }}"
+    owner: "{{ haproxy_decision_cookie_guard_altcha_page_owner }}"
+    group: "{{ haproxy_decision_cookie_guard_altcha_page_group }}"
+    mode: "{{ haproxy_decision_cookie_guard_altcha_page_mode }}"
+  when:
+    - spoa_item.key == 'cookie_guard'
+    - haproxy_decision_cookie_guard_altcha_page_template | default('') | string | length > 0
+    - haproxy_decision_cookie_guard_altcha_page_dest | default('') | string | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Manage cookie-guard ALTCHA assets
+  when:
+    - spoa_item.key == 'cookie_guard'
+    - haproxy_decision_cookie_guard_manage_altcha_assets | bool
+    - haproxy_decision_cookie_guard_altcha_asset_src | default('') | string | length > 0
+    - haproxy_decision_cookie_guard_altcha_assets_version | default('') | string | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+  vars:
+    altcha_version_dir: "{{ haproxy_decision_cookie_guard_altcha_assets_dir }}/{{ haproxy_decision_cookie_guard_altcha_assets_version }}"
+  block:
+    - name: Ensure ALTCHA assets base directory exists
+      ansible.builtin.file:
+        path: "{{ haproxy_decision_cookie_guard_altcha_assets_dir }}"
+        state: directory
+        owner: "{{ haproxy_decision_cookie_guard_altcha_assets_owner }}"
+        group: "{{ haproxy_decision_cookie_guard_altcha_assets_group }}"
+        mode: "{{ haproxy_decision_cookie_guard_altcha_assets_dir_mode }}"
+
+    - name: Ensure ALTCHA assets version directory exists
+      ansible.builtin.file:
+        path: "{{ altcha_version_dir }}"
+        state: directory
+        owner: "{{ haproxy_decision_cookie_guard_altcha_assets_owner }}"
+        group: "{{ haproxy_decision_cookie_guard_altcha_assets_group }}"
+        mode: "{{ haproxy_decision_cookie_guard_altcha_assets_dir_mode }}"
+
+    - name: Deploy ALTCHA JavaScript asset
+      ansible.builtin.copy:
+        src: "{{ haproxy_decision_cookie_guard_altcha_asset_src }}"
+        dest: "{{ altcha_version_dir }}/altcha.min.js"
+        owner: "{{ haproxy_decision_cookie_guard_altcha_assets_owner }}"
+        group: "{{ haproxy_decision_cookie_guard_altcha_assets_group }}"
+        mode: "{{ haproxy_decision_cookie_guard_altcha_assets_mode }}"
+
+    - name: Record ALTCHA asset version
+      ansible.builtin.copy:
+        content: "{{ haproxy_decision_cookie_guard_altcha_assets_version }}\n"
+        dest: "{{ haproxy_decision_cookie_guard_altcha_assets_dir }}/VERSION"
+        owner: "{{ haproxy_decision_cookie_guard_altcha_assets_owner }}"
+        group: "{{ haproxy_decision_cookie_guard_altcha_assets_group }}"
+        mode: "{{ haproxy_decision_cookie_guard_altcha_assets_mode }}"
+
+    - name: Update ALTCHA assets active symlink
+      ansible.builtin.file:
+        src: "{{ altcha_version_dir }}"
+        dest: "{{ haproxy_decision_cookie_guard_altcha_assets_dir }}/{{ haproxy_decision_cookie_guard_altcha_active_symlink }}"
+        state: link
+
 - name: Ensure decision policy directory exists
   vars:
     spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
@@ -283,12 +350,54 @@
     - haproxy-decision-spoa
     - haproxy-decision-config
 
+- name: Ensure decision secrets directory exists
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
+  ansible.builtin.file:
+    path: "{{ haproxy_decision_decision_secret_dir }}"
+    state: directory
+    owner: "{{ haproxy_decision_decision_secret_owner }}"
+    group: "{{ haproxy_decision_decision_secret_group }}"
+    mode: "{{ haproxy_decision_decision_secret_dir_mode }}"
+  when:
+    - haproxy_decision_manage_decision_secret | bool
+    - spoa_item.key == 'decision'
+    - haproxy_decision_decision_secret_dir | default('') | string | length > 0
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Generate decision context secret if requested
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
+    haproxy_decision_secret_bytes: "{{ haproxy_decision_decision_secret_generate_bytes | int }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 0177
+    SECRET_BYTES={{ haproxy_decision_secret_bytes }} python3 -c "import base64, os, pathlib; secret = base64.b64encode(os.urandom(int(os.environ['SECRET_BYTES']))).decode('ascii'); pathlib.Path(r'{{ haproxy_decision_decision_secret_path }}').write_text(secret + '\n', encoding='utf-8')"
+  args:
+    creates: "{{ haproxy_decision_decision_secret_path }}"
+  no_log: "{{ haproxy_decision_decision_secret_no_log | bool }}"
+  when:
+    - haproxy_decision_manage_decision_secret | bool
+    - haproxy_decision_decision_secret_generate | bool
+    - spoa_item.key == 'decision'
+    - haproxy_decision_decision_secret_path | default('') | string | length > 0
+    - haproxy_decision_decision_secret_src | default('') | string | length == 0
+    - haproxy_decision_decision_secret_content | default('') | string | length == 0
+  notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
 - name: Render decision policy configuration
   vars:
     spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
   ansible.builtin.template:
     src: spoa/decision-policy.yml.j2
-    dest: "{{ haproxy_decision_decision_policy_dir }}/{{ haproxy_decision_decision_policy_file }}"
+    dest: "{{ haproxy_decision_decision_policy_path }}"
     owner: "{{ haproxy_decision_decision_policy_owner }}"
     group: "{{ haproxy_decision_decision_policy_group }}"
     mode: "{{ haproxy_decision_decision_policy_file_mode }}"
@@ -297,6 +406,73 @@
     - spoa_item.key == 'decision'
     - haproxy_decision_decision_policy is defined
   notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Render decision context configuration
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
+  ansible.builtin.template:
+    src: spoa/context.yml.j2
+    dest: "{{ haproxy_decision_decision_context_path }}"
+    owner: "{{ haproxy_decision_decision_policy_owner }}"
+    group: "{{ haproxy_decision_decision_policy_group }}"
+    mode: "{{ haproxy_decision_decision_policy_file_mode }}"
+  when:
+    - haproxy_decision_manage_decision_context | bool
+    - spoa_item.key == 'decision'
+    - haproxy_decision_decision_context_path | default('') | string | length > 0
+  notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Manage decision context secret
+  vars:
+    spoa_service: "{{ spoa_item.value.get('service') | default('') }}"
+  when:
+    - haproxy_decision_manage_decision_secret | bool
+    - spoa_item.key == 'decision'
+    - (haproxy_decision_decision_secret_content | default('') | string | length > 0)
+      or (haproxy_decision_decision_secret_src | default('') | string | length > 0)
+  no_log: "{{ haproxy_decision_decision_secret_no_log | bool }}"
+  block:
+    - name: Deploy decision context secret from source file
+      ansible.builtin.copy:
+        src: "{{ haproxy_decision_decision_secret_src }}"
+        dest: "{{ haproxy_decision_decision_secret_path }}"
+        owner: "{{ haproxy_decision_decision_secret_owner }}"
+        group: "{{ haproxy_decision_decision_secret_group }}"
+        mode: "{{ haproxy_decision_decision_secret_mode }}"
+      when: haproxy_decision_decision_secret_src | default('') | string | length > 0
+
+    - name: Write decision context secret content
+      ansible.builtin.copy:
+        content: "{{ haproxy_decision_decision_secret_content }}"
+        dest: "{{ haproxy_decision_decision_secret_path }}"
+        owner: "{{ haproxy_decision_decision_secret_owner }}"
+        group: "{{ haproxy_decision_decision_secret_group }}"
+        mode: "{{ haproxy_decision_decision_secret_mode }}"
+      when:
+        - haproxy_decision_decision_secret_src | default('') | string | length == 0
+        - haproxy_decision_decision_secret_content | default('') | string | length > 0
+  notify: "{{ 'restart ' ~ spoa_service if spoa_service else omit }}"
+  tags:
+    - haproxy-decision
+    - haproxy-decision-spoa
+    - haproxy-decision-config
+
+- name: Validate decision policy and context
+  ansible.builtin.command:
+    argv: "{{ [haproxy_decision_decision_configcheck_bin] + (haproxy_decision_decision_configcheck_args | default([])) }}"
+  changed_when: false
+  when:
+    - haproxy_decision_decision_configcheck_enabled | bool
+    - spoa_item.key == 'decision'
+    - (haproxy_decision_manage_decision_policy | bool) or (haproxy_decision_manage_decision_context | bool)
   tags:
     - haproxy-decision
     - haproxy-decision-spoa

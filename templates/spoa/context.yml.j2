@@ -1,0 +1,2 @@
+# Managed by ansible-haproxy-decision
+{{ haproxy_decision_decision_context | default({}) | to_nice_yaml(indent=2, sort_keys=False) }}
