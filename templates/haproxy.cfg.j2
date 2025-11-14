@@ -58,7 +58,7 @@ listen {{ listener.name }}
 {% for directive in listener.lines | default([]) %}
   {{ directive }}
 {% endfor %}
-{{ render_section_templates(listener) | default('') }}
+{{ render_section_templates(listener) | default('', true) }}
 
 {% endfor %}
 {% for frontend in haproxy_decision_frontends | default([]) %}
@@ -80,7 +80,7 @@ frontend {{ frontend.name }}
 {%     endif %}
 {%   endfor %}
 {% endif %}
-{{ render_section_templates(frontend) | default('') }}
+{{ render_section_templates(frontend) | default('', true) }}
 
 {% endfor %}
 {% for backend in haproxy_decision_backends | default([]) %}
@@ -101,7 +101,7 @@ backend {{ backend.name }}
 {%     endif %}
 {%   endfor %}
 {% endif %}
-{{ render_section_templates(backend) | default('') }}
+{{ render_section_templates(backend) | default('', true) }}
 
 {% endfor %}
-{{ haproxy_decision_extra_config }}
+{{ haproxy_decision_extra_config | default('', true) }}
