@@ -96,6 +96,7 @@
     name: "{{ haproxy_decision_service_name }}"
     state: "{{ haproxy_decision_service_state | default(omit) }}"
     enabled: "{{ haproxy_decision_service_enabled | default(omit) }}"
+    daemon_reload: true
   when: haproxy_decision_manage_service | bool
   tags:
     - haproxy-decision
@@ -107,6 +108,7 @@
     name: "{{ item.value.service }}"
     state: "{{ haproxy_decision_spoa_service_state | default(omit) }}"
     enabled: "{{ haproxy_decision_spoa_service_enabled | default(omit) }}"
+    daemon_reload: true
   loop: "{{ haproxy_decision_enabled_spoas | default([]) }}"
   loop_control:
     label: "{{ item.value.service | default(item.key) }}"
@@ -123,6 +125,7 @@
     name: "{{ item.1 }}"
     state: "{{ haproxy_decision_spoa_service_state | default(omit) }}"
     enabled: "{{ haproxy_decision_spoa_service_enabled | default(omit) }}"
+    daemon_reload: true
   loop: "{{ haproxy_decision_enabled_spoas | default([]) | subelements('value.timers', skip_missing=True) }}"
   loop_control:
     label: "{{ item.1 }}"
