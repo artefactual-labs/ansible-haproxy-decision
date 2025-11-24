@@ -25,6 +25,13 @@
   listen: restart decision-spoa
   when: (haproxy_decision_spoas.decision.enabled | default(false)) | bool
 
+- name: reload decision-spoa
+  ansible.builtin.service:
+    name: decision-spoa
+    state: reloaded
+  listen: reload decision-spoa
+  when: (haproxy_decision_spoas.decision.enabled | default(false)) | bool
+
 - name: restart coraza-spoa
   ansible.builtin.service:
     name: coraza-spoa

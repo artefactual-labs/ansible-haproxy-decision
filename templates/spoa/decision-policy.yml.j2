@@ -1,2 +1,6 @@
 # Managed by artefactual.ansible-haproxy-decision
-{{ haproxy_decision_decision_policy | default({}) | to_nice_yaml(indent=2, sort_keys=False) }}
+{{ (
+     haproxy_decision_decision_policy
+       | default({}, true)
+       | to_nice_yaml(indent=2, sort_keys=False, explicit_start=False, explicit_end=False)
+   ) | trim }}
